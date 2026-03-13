@@ -44,6 +44,15 @@ let btnShowApply   = true;
 let btnShowDismiss = true;
 let btnShowUndo    = true;
 
+// Keyboard shortcut strings (e.g. 'Enter', 'Tab', 'Shift+Z', 'Ctrl+Enter')
+let shortcutApply   = 'Enter';
+let shortcutDismiss = 'Escape';
+let shortcutUndo    = '';
+
+// Whether the tooltip is currently showing the post-fix undo state
+let tooltipInUndoMode = false;
+let undoCallback      = null;
+
 // Per-element WeakMaps
 const debounceTimers = new WeakMap(); // el → setTimeout handle
 const requestIds     = new WeakMap(); // el → latest requestId string
@@ -126,6 +135,23 @@ function escapeHTML(str) {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Returns true if a KeyboardEvent matches a stored shortcut string.
+ * Format: optional modifiers joined with '+', then the key.
+ * Examples: 'Enter', 'Tab', 'Shift+Z', 'Ctrl+Enter', 'Alt+Shift+X'
+ */
+function matchesShortcut(e, shortcut) {
+  if (!shortcut) return false;
+  const parts = shortcut.split('+');
+  const key   = parts[parts.length - 1];
+  return (
+    e.key      === key                  &&
+    e.shiftKey === parts.includes('Shift') &&
+    e.ctrlKey  === parts.includes('Ctrl')  &&
+    e.altKey   === parts.includes('Alt')
+  );
+}
+
 // ─── Spinner ──────────────────────────────────────────────────────────────────
 
 function showSpinner(el) {
@@ -173,6 +199,9 @@ function repositionCurrentTooltip() {
 function removeTooltip() {
   document.getElementById(TOOLTIP_ID)?.remove();
   currentTooltipTarget = null;
+
+  tooltipInUndoMode = false;
+  undoCallback      = null;
 
   if (outsideClickHandler) {
     document.removeEventListener('mousedown', outsideClickHandler);
@@ -373,34 +402,40 @@ function showTooltip(targetEl, result, originalText) {
   window.addEventListener('resize', repositionCurrentTooltip);
 
   // ── Apply fix: swap actions row to undo state ──────────────────────────────
-  const applyFix = (fixBtn) => {
+  const applyFix = () => {
     const textBefore = getTextFromElement(targetEl);
     setTextInElement(targetEl, correctedText);
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
 
     if (btnShowUndo) {
-      // Replace the actions row with an inline undo confirmation
       const UNDO_DURATION = 5000;
+      tooltipInUndoMode = true;
       actions.innerHTML = '';
 
       const appliedMsg = document.createElement('span');
       appliedMsg.className = 'grammarai-applied-msg';
       appliedMsg.textContent = '✓ Fix applied';
 
-      const undoBtn = document.createElement('button');
-      undoBtn.className = 'grammarai-undo-inline-btn';
-      undoBtn.textContent = 'Undo';
-
       const countdown = document.createElement('span');
       countdown.className = 'grammarai-countdown';
       countdown.textContent = `${UNDO_DURATION / 1000}s`;
+
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'grammarai-undo-inline-btn';
+      undoBtn.textContent = shortcutUndo ? `Undo (${shortcutUndo})` : 'Undo';
 
       actions.appendChild(appliedMsg);
       actions.appendChild(countdown);
       actions.appendChild(undoBtn);
 
-      // Countdown timer
+      // Expose undo action for keyboard shortcut
+      undoCallback = () => {
+        clearInterval(countdownInterval);
+        setTextInElement(targetEl, textBefore);
+        removeTooltip();
+      };
+
       let remaining = UNDO_DURATION / 1000;
       const countdownInterval = setInterval(() => {
         remaining -= 1;
@@ -408,13 +443,8 @@ function showTooltip(targetEl, result, originalText) {
         if (remaining <= 0) clearInterval(countdownInterval);
       }, 1000);
 
-      undoBtn.addEventListener('click', () => {
-        clearInterval(countdownInterval);
-        setTextInElement(targetEl, textBefore);
-        removeTooltip();
-      });
+      undoBtn.addEventListener('click', (e) => { e.stopPropagation(); undoCallback(); });
 
-      // Auto-dismiss after countdown
       setTimeout(() => {
         clearInterval(countdownInterval);
         removeTooltip();
@@ -426,12 +456,25 @@ function showTooltip(targetEl, result, originalText) {
 
   header.querySelector('.grammarai-close').addEventListener('click', removeTooltip);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — configurable, fall back to defaults
   keyboardHandler = (e) => {
-    if (e.key === 'Escape') {
-      removeTooltip();
-    } else if (e.key === 'Enter' && document.activeElement === tooltip) {
-      applyFix(null);
+    if (tooltipInUndoMode) {
+      // In undo state: only undo shortcut and dismiss are active
+      if (matchesShortcut(e, shortcutUndo) && undoCallback) {
+        e.preventDefault();
+        undoCallback();
+      } else if (matchesShortcut(e, shortcutDismiss)) {
+        e.preventDefault();
+        removeTooltip();
+      }
+    } else {
+      if (matchesShortcut(e, shortcutApply)) {
+        e.preventDefault();
+        applyFix();
+      } else if (matchesShortcut(e, shortcutDismiss)) {
+        e.preventDefault();
+        removeTooltip();
+      }
     }
   };
   document.addEventListener('keydown', keyboardHandler);
@@ -562,9 +605,12 @@ ext.runtime.onMessage.addListener((message) => {
   if (message.mode           !== undefined) selectedMode   = message.mode;
   if (message.tone           !== undefined) selectedTone   = message.tone;
   if (message.siteDisabled   !== undefined) isSiteDisabled = message.siteDisabled;
-  if (message.btnShowApply   !== undefined) btnShowApply   = message.btnShowApply;
-  if (message.btnShowDismiss !== undefined) btnShowDismiss = message.btnShowDismiss;
-  if (message.btnShowUndo    !== undefined) btnShowUndo    = message.btnShowUndo;
+  if (message.btnShowApply    !== undefined) btnShowApply    = message.btnShowApply;
+  if (message.btnShowDismiss  !== undefined) btnShowDismiss  = message.btnShowDismiss;
+  if (message.btnShowUndo     !== undefined) btnShowUndo     = message.btnShowUndo;
+  if (message.shortcutApply   !== undefined) shortcutApply   = message.shortcutApply;
+  if (message.shortcutDismiss !== undefined) shortcutDismiss = message.shortcutDismiss;
+  if (message.shortcutUndo    !== undefined) shortcutUndo    = message.shortcutUndo;
   if (!isEnabled || isSiteDisabled) removeTooltip();
 });
 
@@ -576,7 +622,8 @@ ext.runtime.onMessage.addListener((message) => {
   const [syncData, localData] = await Promise.all([
     new Promise(r => ext.storage.sync.get(
       ['grammarEnabled', 'grammarLanguage', 'grammarMode', 'grammarTone', 'disabledSites',
-       'btnShowApply', 'btnShowDismiss', 'btnShowUndo'],
+       'btnShowApply', 'btnShowDismiss', 'btnShowUndo',
+       'shortcutApply', 'shortcutDismiss', 'shortcutUndo'],
       r
     )),
     new Promise(r => ext.storage.local.get(['ignoredPhrases'], r)),
@@ -588,9 +635,12 @@ ext.runtime.onMessage.addListener((message) => {
   selectedTone   = syncData.grammarTone     ?? 'formal';
   isSiteDisabled = (syncData.disabledSites  ?? []).includes(hostname);
   ignoredPhrases = new Set(localData.ignoredPhrases ?? []);
-  btnShowApply   = syncData.btnShowApply   ?? true;
-  btnShowDismiss = syncData.btnShowDismiss ?? true;
-  btnShowUndo    = syncData.btnShowUndo    ?? true;
+  btnShowApply   = syncData.btnShowApply    ?? true;
+  btnShowDismiss = syncData.btnShowDismiss  ?? true;
+  btnShowUndo    = syncData.btnShowUndo     ?? true;
+  shortcutApply  = syncData.shortcutApply   ?? 'Enter';
+  shortcutDismiss= syncData.shortcutDismiss ?? 'Escape';
+  shortcutUndo   = syncData.shortcutUndo    ?? '';
 
   scanAndAttach();
 })();

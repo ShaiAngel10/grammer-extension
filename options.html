@@ -203,6 +203,51 @@
     .usage-stat .value { font-size: 20px; font-weight: 700; color: var(--accent); }
     .usage-stat .key   { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
+    /* ── Shortcut recorder ── */
+    .shortcut-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 0;
+    }
+
+    .shortcut-label { font-size: 13.5px; font-weight: 500; }
+
+    .shortcut-recorder-wrap { display: flex; align-items: center; gap: 6px; }
+
+    .shortcut-recorder {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 6px 14px;
+      min-width: 130px;
+      text-align: center;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .shortcut-recorder:hover { border-color: var(--accent); }
+
+    .shortcut-recorder.recording {
+      border-color: var(--accent);
+      color: var(--accent);
+      animation: shortcut-pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes shortcut-pulse {
+      0%, 100% { box-shadow: 0 0 0 0   rgba(167,139,250,0.4); }
+      50%       { box-shadow: 0 0 0 4px rgba(167,139,250,0.0); }
+    }
+
+    .shortcut-clear {
+      background: none; border: none;
+      color: var(--text-muted); cursor: pointer;
+      font-size: 12px; padding: 4px 6px;
+      border-radius: 5px; transition: color 0.12s;
+    }
+    .shortcut-clear:hover { color: var(--danger); }
+
     /* ── Option toggle rows ── */
     .toggle-row-opt {
       display: flex; align-items: center; gap: 12px;
@@ -302,6 +347,39 @@
       <div class="card-footer">
         <span id="ignored-count" style="font-size:12.5px;color:var(--text-muted)">0 phrases</span>
         <button class="btn-ghost" id="clear-ignored-btn">Clear All</button>
+      </div>
+    </div>
+
+    <!-- Keyboard shortcuts -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Keyboard Shortcuts</h2>
+        <p>Click a shortcut field and press the key combination you want. Press Escape while recording to clear a shortcut.</p>
+      </div>
+      <div class="card-body">
+        <div class="shortcut-row">
+          <span class="shortcut-label">Apply Fix</span>
+          <div class="shortcut-recorder-wrap">
+            <button class="shortcut-recorder" id="sc-apply" data-shortcut="Enter">Enter</button>
+            <button class="shortcut-clear" data-target="sc-apply" title="Clear shortcut">✕</button>
+          </div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">Dismiss</span>
+          <div class="shortcut-recorder-wrap">
+            <button class="shortcut-recorder" id="sc-dismiss" data-shortcut="Escape">Escape</button>
+            <button class="shortcut-clear" data-target="sc-dismiss" title="Clear shortcut">✕</button>
+          </div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">Undo (after applying)</span>
+          <div class="shortcut-recorder-wrap">
+            <button class="shortcut-recorder" id="sc-undo" data-shortcut="">Click to set…</button>
+            <button class="shortcut-clear" data-target="sc-undo" title="Clear shortcut">✕</button>
+          </div>
+        </div>
+        <div class="status-banner" id="shortcuts-banner"></div>
+        <button class="btn-primary" id="save-shortcuts-btn">Save Shortcuts</button>
       </div>
     </div>
 

@@ -24,6 +24,12 @@ const customPromptInput = document.getElementById('custom-prompt-input');
 const savePromptBtn     = document.getElementById('save-prompt-btn');
 const promptBanner      = document.getElementById('prompt-banner');
 
+const scApplyBtn       = document.getElementById('sc-apply');
+const scDismissBtn     = document.getElementById('sc-dismiss');
+const scUndoBtn        = document.getElementById('sc-undo');
+const saveShortcutsBtn = document.getElementById('save-shortcuts-btn');
+const shortcutsBanner  = document.getElementById('shortcuts-banner');
+
 const btnApplyChk      = document.getElementById('btn-apply');
 const btnDismissChk    = document.getElementById('btn-dismiss');
 const btnUndoChk       = document.getElementById('btn-undo');
@@ -66,7 +72,8 @@ function formatCost(tokens) {
 (async () => {
   const [local, sync] = await Promise.all([
     storageGet(ext.storage.local, ['apiKey', 'usageStats', 'ignoredPhrases']),
-    storageGet(ext.storage.sync,  ['customSystemPrompt', 'btnShowApply', 'btnShowDismiss', 'btnShowUndo']),
+    storageGet(ext.storage.sync,  ['customSystemPrompt', 'btnShowApply', 'btnShowDismiss', 'btnShowUndo',
+                                   'shortcutApply', 'shortcutDismiss', 'shortcutUndo']),
   ]);
 
   apiKeyInput.value        = local.apiKey             ?? '';
@@ -74,6 +81,10 @@ function formatCost(tokens) {
   btnApplyChk.checked      = sync.btnShowApply   ?? true;
   btnDismissChk.checked    = sync.btnShowDismiss ?? true;
   btnUndoChk.checked       = sync.btnShowUndo    ?? true;
+
+  setRecorder(scApplyBtn,   sync.shortcutApply   ?? 'Enter');
+  setRecorder(scDismissBtn, sync.shortcutDismiss ?? 'Escape');
+  setRecorder(scUndoBtn,    sync.shortcutUndo    ?? '');
 
   renderIgnoredPhrases(local.ignoredPhrases ?? []);
   renderUsage(local.usageStats ?? {});
@@ -124,6 +135,88 @@ savePromptBtn.addEventListener('click', async () => {
   } finally {
     savePromptBtn.disabled    = false;
     savePromptBtn.textContent = 'Save Instructions';
+  }
+});
+
+// ─── Keyboard shortcut recorder ──────────────────────────────────────────────
+
+function setRecorder(btn, shortcut) {
+  btn.dataset.shortcut = shortcut;
+  btn.textContent = shortcut || 'Click to set…';
+}
+
+function initRecorder(btn) {
+  let recording = false;
+
+  btn.addEventListener('click', () => {
+    if (recording) return;
+    recording = true;
+    btn.textContent = 'Press a key…';
+    btn.classList.add('recording');
+  });
+
+  btn.addEventListener('keydown', (e) => {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Escape while recording = clear the shortcut
+    if (e.key === 'Escape') {
+      recording = false;
+      btn.classList.remove('recording');
+      setRecorder(btn, '');
+      return;
+    }
+
+    // Ignore bare modifier keys
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+
+    const parts = [];
+    if (e.ctrlKey)  parts.push('Ctrl');
+    if (e.altKey)   parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    parts.push(e.key);
+
+    recording = false;
+    btn.classList.remove('recording');
+    setRecorder(btn, parts.join('+'));
+  });
+
+  btn.addEventListener('blur', () => {
+    if (recording) {
+      recording = false;
+      btn.classList.remove('recording');
+      btn.textContent = btn.dataset.shortcut || 'Click to set…';
+    }
+  });
+}
+
+// Wire up all recorders
+[scApplyBtn, scDismissBtn, scUndoBtn].forEach(initRecorder);
+
+// Clear buttons
+document.querySelectorAll('.shortcut-clear').forEach(clearBtn => {
+  clearBtn.addEventListener('click', () => {
+    const target = document.getElementById(clearBtn.dataset.target);
+    if (target) setRecorder(target, '');
+  });
+});
+
+saveShortcutsBtn.addEventListener('click', async () => {
+  saveShortcutsBtn.disabled    = true;
+  saveShortcutsBtn.textContent = 'Saving…';
+  try {
+    await new Promise(resolve => ext.storage.sync.set({
+      shortcutApply:   scApplyBtn.dataset.shortcut   ?? 'Enter',
+      shortcutDismiss: scDismissBtn.dataset.shortcut ?? 'Escape',
+      shortcutUndo:    scUndoBtn.dataset.shortcut    ?? '',
+    }, resolve));
+    showBanner(shortcutsBanner, 'success', 'Shortcuts saved');
+  } catch (err) {
+    showBanner(shortcutsBanner, 'error', err.message || 'Failed to save.');
+  } finally {
+    saveShortcutsBtn.disabled    = false;
+    saveShortcutsBtn.textContent = 'Save Shortcuts';
   }
 });
 

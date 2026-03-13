@@ -348,7 +348,7 @@ function showTooltip(targetEl, result, originalText) {
     const fixBtn = document.createElement('button');
     fixBtn.className = 'grammarai-fix-btn';
     fixBtn.textContent = '✓ Apply Fix';
-    fixBtn.addEventListener('click', () => applyFix(fixBtn));
+    fixBtn.addEventListener('click', (e) => { e.stopPropagation(); applyFix(); });
     actions.appendChild(fixBtn);
   }
 
@@ -441,6 +441,7 @@ function showTooltip(targetEl, result, originalText) {
 
   // Outside click
   outsideClickHandler = (e) => {
+    if (!document.contains(e.target)) return; // target removed from DOM (e.g. after Apply Fix)
     if (!tooltip.contains(e.target) && e.target !== targetEl) removeTooltip();
   };
   setTimeout(() => document.addEventListener('mousedown', outsideClickHandler), 50);

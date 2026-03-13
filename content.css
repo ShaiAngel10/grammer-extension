@@ -1,0 +1,156 @@
+/* content.css — Tooltip styles injected into every page */
+
+#grammarai-tooltip {
+  position: absolute;
+  z-index: 2147483647; /* max z-index so we're above everything */
+  width: 340px;
+  background: #0f0f13;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(167, 139, 250, 0.1) inset;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  color: #e2e8f0;
+  animation: grammarai-slide-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: all;
+}
+
+@keyframes grammarai-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.grammarai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.grammarai-logo {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #a78bfa;
+  text-transform: uppercase;
+}
+
+.grammarai-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.grammarai-close:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.grammarai-explanation {
+  margin: 0 0 10px;
+  line-height: 1.55;
+  color: #94a3b8;
+  font-size: 12.5px;
+}
+
+.grammarai-corrections {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grammarai-corrections li {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 2px solid #a78bfa;
+}
+
+.grammarai-corrections del {
+  color: #f87171;
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 113, 113, 0.6);
+}
+
+.grammarai-corrections ins {
+  color: #4ade80;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.grammarai-logo--error {
+  color: #f87171;
+}
+
+.grammarai-error-msg {
+  color: #f87171;
+}
+
+.grammarai-reason {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.grammarai-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.grammarai-fix-btn,
+.grammarai-dismiss-btn {
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  transition: opacity 0.15s, transform 0.12s;
+  font-family: inherit;
+}
+
+.grammarai-fix-btn {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  color: #fff;
+  flex: 1;
+  letter-spacing: 0.02em;
+}
+
+.grammarai-fix-btn:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.grammarai-dismiss-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.grammarai-dismiss-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}

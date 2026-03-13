@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GrammarAI</title>
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ── */
+    :root {
+      --bg: #0c0c10;
+      --surface: #14141c;
+      --surface-2: #1c1c28;
+      --border: rgba(167, 139, 250, 0.18);
+      --accent: #a78bfa;
+      --accent-dark: #7c3aed;
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --success: #4ade80;
+      --danger: #f87171;
+      --radius: 10px;
+    }
+
+    body {
+      width: 320px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      font-size: 13.5px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 18px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      line-height: 1;
+    }
+
+    .logo-text strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .logo-text span {
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Toggle row ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .toggle-label {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .toggle-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Pill toggle */
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--surface-2);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), background 0.2s;
+    }
+
+    .toggle-switch input:checked + .toggle-track {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      border-color: transparent;
+    }
+
+    .toggle-switch input:checked + .toggle-track::after {
+      transform: translateX(20px);
+      background: #fff;
+    }
+
+    /* ── Body ── */
+    .popup-body {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* ── Form field ── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    select, input[type="password"], input[type="text"] {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+      appearance: none;
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+    }
+
+    select option {
+      background: #1c1c28;
+    }
+
+    .api-key-wrap {
+      position: relative;
+    }
+
+    .api-key-wrap input {
+      padding-right: 40px;
+    }
+
+    .toggle-visibility {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+      transition: color 0.15s;
+    }
+    .toggle-visibility:hover { color: var(--text); }
+
+    /* ── Save button ── */
+    .save-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13.5px;
+      font-weight: 700;
+      font-family: inherit;
+      letter-spacing: 0.02em;
+      padding: 10px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.12s;
+    }
+
+    .save-btn:hover {
+      opacity: 0.88;
+      transform: translateY(-1px);
+    }
+
+    .save-btn:active {
+      transform: translateY(0);
+    }
+
+    /* ── Status banner ── */
+    #status-banner {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      font-size: 12.5px;
+      font-weight: 500;
+      animation: fadein 0.2s ease both;
+    }
+
+    @keyframes fadein {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    #status-banner.success {
+      display: flex;
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.25);
+      color: var(--success);
+    }
+
+    #status-banner.error {
+      display: flex;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.25);
+      color: var(--danger);
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 10px 18px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-icon">✦</div>
+    <div class="logo-text">
+      <strong>GrammarAI</strong>
+      <span>Real-Time Writing Assistant</span>
+    </div>
+  </header>
+
+  <!-- Enable / Disable toggle -->
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">Enable GrammarAI</div>
+      <div class="toggle-sub" id="status-text">Active — checking text fields</div>
+    </div>
+    <label class="toggle-switch" aria-label="Enable GrammarAI">
+      <input type="checkbox" id="enabled-toggle" checked />
+      <div class="toggle-track"></div>
+    </label>
+  </div>
+
+  <!-- Settings -->
+  <div class="popup-body">
+
+    <!-- Language selector -->
+    <div class="field">
+      <label for="language-select">Target Language</label>
+      <select id="language-select">
+        <option value="en">🇬🇧 English</option>
+        <option value="es">🇪🇸 Spanish — Español</option>
+        <option value="fr">🇫🇷 French — Français</option>
+        <option value="de">🇩🇪 German — Deutsch</option>
+        <option value="it">🇮🇹 Italian — Italiano</option>
+        <option value="pt">🇵🇹 Portuguese — Português</option>
+        <option value="nl">🇳🇱 Dutch — Nederlands</option>
+        <option value="pl">🇵🇱 Polish — Polski</option>
+        <option value="ru">🇷🇺 Russian — Русский</option>
+        <option value="ja">🇯🇵 Japanese — 日本語</option>
+        <option value="zh">🇨🇳 Chinese Simplified — 中文</option>
+        <option value="ar">🇸🇦 Arabic — العربية</option>
+      </select>
+    </div>
+
+    <!-- OpenAI API key -->
+    <div class="field">
+      <label for="api-key-input">OpenAI API Key</label>
+      <div class="api-key-wrap">
+        <input
+          type="password"
+          id="api-key-input"
+          placeholder="sk-..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="toggle-visibility" id="toggle-key-visibility" title="Show/hide key">👁</button>
+      </div>
+    </div>
+
+    <!-- Status banner -->
+    <div id="status-banner"></div>
+
+    <!-- Save -->
+    <button class="save-btn" id="save-btn">Save Settings</button>
+
+  </div>
+
+  <footer>
+    Powered by <a href="https://openai.com" target="_blank" rel="noopener noreferrer">GPT-4o mini</a> ·
+    Your key is stored locally only
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

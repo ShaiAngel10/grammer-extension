@@ -39,6 +39,11 @@ let selectedTone   = 'formal';
 let isSiteDisabled = false;
 let ignoredPhrases = new Set();
 
+// Button visibility preferences (loaded from storage)
+let btnShowApply   = true;
+let btnShowDismiss = true;
+let btnShowUndo    = true;
+
 // Per-element WeakMaps
 const debounceTimers = new WeakMap(); // el → setTimeout handle
 const requestIds     = new WeakMap(); // el → latest requestId string
@@ -336,18 +341,24 @@ function showTooltip(targetEl, result, originalText) {
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  const fixBtn = document.createElement('button');
-  fixBtn.className = 'grammarai-fix-btn';
-  fixBtn.textContent = '✓ Apply Fix';
-
-  const dismissBtn = document.createElement('button');
-  dismissBtn.className = 'grammarai-dismiss-btn';
-  dismissBtn.textContent = 'Dismiss';
-
   const actions = document.createElement('div');
   actions.className = 'grammarai-actions';
-  actions.appendChild(fixBtn);
-  actions.appendChild(dismissBtn);
+
+  if (btnShowApply) {
+    const fixBtn = document.createElement('button');
+    fixBtn.className = 'grammarai-fix-btn';
+    fixBtn.textContent = '✓ Apply Fix';
+    fixBtn.addEventListener('click', () => applyFix(fixBtn));
+    actions.appendChild(fixBtn);
+  }
+
+  if (btnShowDismiss) {
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'grammarai-dismiss-btn';
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.addEventListener('click', removeTooltip);
+    actions.appendChild(dismissBtn);
+  }
 
   // ── Assemble ───────────────────────────────────────────────────────────────
   tooltip.appendChild(header);
@@ -361,18 +372,58 @@ function showTooltip(targetEl, result, originalText) {
   window.addEventListener('scroll', repositionCurrentTooltip, true);
   window.addEventListener('resize', repositionCurrentTooltip);
 
-  // ── Event listeners ────────────────────────────────────────────────────────
-  const applyFix = () => {
+  // ── Apply fix: swap actions row to undo state ──────────────────────────────
+  const applyFix = (fixBtn) => {
     const textBefore = getTextFromElement(targetEl);
     setTextInElement(targetEl, correctedText);
-    removeTooltip();
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
-    showUndoBar(targetEl, textBefore);
+
+    if (btnShowUndo) {
+      // Replace the actions row with an inline undo confirmation
+      const UNDO_DURATION = 5000;
+      actions.innerHTML = '';
+
+      const appliedMsg = document.createElement('span');
+      appliedMsg.className = 'grammarai-applied-msg';
+      appliedMsg.textContent = '✓ Fix applied';
+
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'grammarai-undo-inline-btn';
+      undoBtn.textContent = 'Undo';
+
+      const countdown = document.createElement('span');
+      countdown.className = 'grammarai-countdown';
+      countdown.textContent = `${UNDO_DURATION / 1000}s`;
+
+      actions.appendChild(appliedMsg);
+      actions.appendChild(countdown);
+      actions.appendChild(undoBtn);
+
+      // Countdown timer
+      let remaining = UNDO_DURATION / 1000;
+      const countdownInterval = setInterval(() => {
+        remaining -= 1;
+        countdown.textContent = `${remaining}s`;
+        if (remaining <= 0) clearInterval(countdownInterval);
+      }, 1000);
+
+      undoBtn.addEventListener('click', () => {
+        clearInterval(countdownInterval);
+        setTextInElement(targetEl, textBefore);
+        removeTooltip();
+      });
+
+      // Auto-dismiss after countdown
+      setTimeout(() => {
+        clearInterval(countdownInterval);
+        removeTooltip();
+      }, UNDO_DURATION);
+    } else {
+      removeTooltip();
+    }
   };
 
-  fixBtn.addEventListener('click', applyFix);
-  dismissBtn.addEventListener('click', removeTooltip);
   header.querySelector('.grammarai-close').addEventListener('click', removeTooltip);
 
   // Keyboard shortcuts
@@ -380,7 +431,7 @@ function showTooltip(targetEl, result, originalText) {
     if (e.key === 'Escape') {
       removeTooltip();
     } else if (e.key === 'Enter' && document.activeElement === tooltip) {
-      applyFix();
+      applyFix(null);
     }
   };
   document.addEventListener('keydown', keyboardHandler);
@@ -505,11 +556,14 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 ext.runtime.onMessage.addListener((message) => {
   if (message.type !== 'SETTINGS_UPDATED') return;
-  if (message.enabled      !== undefined) isEnabled      = message.enabled;
-  if (message.language     !== undefined) selectedLang   = message.language;
-  if (message.mode         !== undefined) selectedMode   = message.mode;
-  if (message.tone         !== undefined) selectedTone   = message.tone;
-  if (message.siteDisabled !== undefined) isSiteDisabled = message.siteDisabled;
+  if (message.enabled        !== undefined) isEnabled      = message.enabled;
+  if (message.language       !== undefined) selectedLang   = message.language;
+  if (message.mode           !== undefined) selectedMode   = message.mode;
+  if (message.tone           !== undefined) selectedTone   = message.tone;
+  if (message.siteDisabled   !== undefined) isSiteDisabled = message.siteDisabled;
+  if (message.btnShowApply   !== undefined) btnShowApply   = message.btnShowApply;
+  if (message.btnShowDismiss !== undefined) btnShowDismiss = message.btnShowDismiss;
+  if (message.btnShowUndo    !== undefined) btnShowUndo    = message.btnShowUndo;
   if (!isEnabled || isSiteDisabled) removeTooltip();
 });
 
@@ -520,7 +574,8 @@ ext.runtime.onMessage.addListener((message) => {
 
   const [syncData, localData] = await Promise.all([
     new Promise(r => ext.storage.sync.get(
-      ['grammarEnabled', 'grammarLanguage', 'grammarMode', 'grammarTone', 'disabledSites'],
+      ['grammarEnabled', 'grammarLanguage', 'grammarMode', 'grammarTone', 'disabledSites',
+       'btnShowApply', 'btnShowDismiss', 'btnShowUndo'],
       r
     )),
     new Promise(r => ext.storage.local.get(['ignoredPhrases'], r)),
@@ -532,6 +587,9 @@ ext.runtime.onMessage.addListener((message) => {
   selectedTone   = syncData.grammarTone     ?? 'formal';
   isSiteDisabled = (syncData.disabledSites  ?? []).includes(hostname);
   ignoredPhrases = new Set(localData.ignoredPhrases ?? []);
+  btnShowApply   = syncData.btnShowApply   ?? true;
+  btnShowDismiss = syncData.btnShowDismiss ?? true;
+  btnShowUndo    = syncData.btnShowUndo    ?? true;
 
   scanAndAttach();
 })();

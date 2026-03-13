@@ -203,6 +203,37 @@
     .usage-stat .value { font-size: 20px; font-weight: 700; color: var(--accent); }
     .usage-stat .key   { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
+    /* ── Option toggle rows ── */
+    .toggle-row-opt {
+      display: flex; align-items: center; gap: 12px;
+      cursor: pointer; padding: 6px 0;
+    }
+
+    .toggle-row-opt input { display: none; }
+
+    .toggle-track-opt {
+      position: relative; width: 40px; height: 22px; flex-shrink: 0;
+      background: var(--surface-2);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 999px;
+      transition: background 0.2s;
+    }
+    .toggle-track-opt::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; background: var(--text-muted);
+      border-radius: 50%; transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-row-opt input:checked ~ .toggle-track-opt {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      border-color: transparent;
+    }
+    .toggle-row-opt input:checked ~ .toggle-track-opt::after {
+      transform: translateX(18px); background: #fff;
+    }
+
+    .opt-label { font-size: 13.5px; font-weight: 600; }
+    .opt-sub   { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
     /* ── Footer ── */
     footer {
       text-align: center; font-size: 12px;
@@ -271,6 +302,42 @@
       <div class="card-footer">
         <span id="ignored-count" style="font-size:12.5px;color:var(--text-muted)">0 phrases</span>
         <button class="btn-ghost" id="clear-ignored-btn">Clear All</button>
+      </div>
+    </div>
+
+    <!-- Button preferences -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Tooltip Buttons</h2>
+        <p>Choose which action buttons appear in the grammar suggestion tooltip.</p>
+      </div>
+      <div class="card-body">
+        <label class="toggle-row-opt">
+          <input type="checkbox" id="btn-apply" checked />
+          <span class="toggle-track-opt"></span>
+          <div>
+            <div class="opt-label">Apply Fix</div>
+            <div class="opt-sub">Replaces the text with the corrected version</div>
+          </div>
+        </label>
+        <label class="toggle-row-opt">
+          <input type="checkbox" id="btn-dismiss" checked />
+          <span class="toggle-track-opt"></span>
+          <div>
+            <div class="opt-label">Dismiss</div>
+            <div class="opt-sub">Closes the suggestion without making changes</div>
+          </div>
+        </label>
+        <label class="toggle-row-opt">
+          <input type="checkbox" id="btn-undo" checked />
+          <span class="toggle-track-opt"></span>
+          <div>
+            <div class="opt-label">Undo (shown after applying a fix)</div>
+            <div class="opt-sub">Appears inside the tooltip after a fix is applied, with a 5-second countdown</div>
+          </div>
+        </label>
+        <div class="status-banner" id="btns-banner"></div>
+        <button class="btn-primary" id="save-btns-btn">Save Button Preferences</button>
       </div>
     </div>
 

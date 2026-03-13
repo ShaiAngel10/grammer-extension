@@ -24,6 +24,12 @@ const customPromptInput = document.getElementById('custom-prompt-input');
 const savePromptBtn     = document.getElementById('save-prompt-btn');
 const promptBanner      = document.getElementById('prompt-banner');
 
+const btnApplyChk      = document.getElementById('btn-apply');
+const btnDismissChk    = document.getElementById('btn-dismiss');
+const btnUndoChk       = document.getElementById('btn-undo');
+const saveBtnsBtn      = document.getElementById('save-btns-btn');
+const btnsBanner       = document.getElementById('btns-banner');
+
 const ignoredList      = document.getElementById('ignored-list');
 const noIgnoredMsg     = document.getElementById('no-ignored');
 const ignoredCountEl   = document.getElementById('ignored-count');
@@ -60,11 +66,14 @@ function formatCost(tokens) {
 (async () => {
   const [local, sync] = await Promise.all([
     storageGet(ext.storage.local, ['apiKey', 'usageStats', 'ignoredPhrases']),
-    storageGet(ext.storage.sync,  ['customSystemPrompt']),
+    storageGet(ext.storage.sync,  ['customSystemPrompt', 'btnShowApply', 'btnShowDismiss', 'btnShowUndo']),
   ]);
 
   apiKeyInput.value        = local.apiKey             ?? '';
   customPromptInput.value  = sync.customSystemPrompt  ?? '';
+  btnApplyChk.checked      = sync.btnShowApply   ?? true;
+  btnDismissChk.checked    = sync.btnShowDismiss ?? true;
+  btnUndoChk.checked       = sync.btnShowUndo    ?? true;
 
   renderIgnoredPhrases(local.ignoredPhrases ?? []);
   renderUsage(local.usageStats ?? {});
@@ -115,6 +124,31 @@ savePromptBtn.addEventListener('click', async () => {
   } finally {
     savePromptBtn.disabled    = false;
     savePromptBtn.textContent = 'Save Instructions';
+  }
+});
+
+// ─── Button preferences ───────────────────────────────────────────────────────
+
+saveBtnsBtn.addEventListener('click', async () => {
+  // Prevent disabling all buttons at once
+  if (!btnApplyChk.checked && !btnDismissChk.checked) {
+    showBanner(btnsBanner, 'error', 'At least one of Apply Fix or Dismiss must be enabled');
+    return;
+  }
+  saveBtnsBtn.disabled    = true;
+  saveBtnsBtn.textContent = 'Saving…';
+  try {
+    await new Promise(resolve => ext.storage.sync.set({
+      btnShowApply:   btnApplyChk.checked,
+      btnShowDismiss: btnDismissChk.checked,
+      btnShowUndo:    btnUndoChk.checked,
+    }, resolve));
+    showBanner(btnsBanner, 'success', 'Button preferences saved');
+  } catch (err) {
+    showBanner(btnsBanner, 'error', err.message || 'Failed to save.');
+  } finally {
+    saveBtnsBtn.disabled    = false;
+    saveBtnsBtn.textContent = 'Save Button Preferences';
   }
 });
 

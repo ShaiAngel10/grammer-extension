@@ -229,6 +229,40 @@
   color: #e2e8f0;
 }
 
+/* ── Inline undo state (replaces action buttons after Apply Fix) ──────────── */
+
+.grammarai-applied-msg {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4ade80;
+  flex: 1;
+}
+
+.grammarai-countdown {
+  font-size: 11px;
+  color: #475569;
+  min-width: 20px;
+  text-align: right;
+}
+
+.grammarai-undo-inline-btn {
+  background: rgba(167, 139, 250, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 7px;
+  color: #a78bfa;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  font-family: inherit;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.grammarai-undo-inline-btn:hover {
+  background: rgba(167, 139, 250, 0.22);
+}
+
 /* ── Spinner ──────────────────────────────────────────────────────────────── */
 
 .grammarai-spinner {

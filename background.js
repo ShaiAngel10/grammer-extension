@@ -1,31 +1,33 @@
 /**
- * background.js — Service Worker
+ * background.js — Service Worker (v2)
  *
  * Handles all outbound API requests so the OpenAI API key never
- * touches the content-script layer (which runs in page context and
- * could be inspected via DevTools by any site).
+ * touches the content-script layer.
  *
- * Message protocol (from content.js → background.js):
- *   { type: 'CHECK_GRAMMAR', text: string, language: string }
+ * Message protocol:
+ *   { type: 'CHECK_GRAMMAR', text, language, mode, tone, requestId }
+ *   { type: 'SAVE_API_KEY', apiKey }
+ *   { type: 'CLEAR_USAGE' }
+ *   { type: 'OPEN_OPTIONS' }
  *
- * Response back to content.js:
- *   { success: true,  data: { correctedText, explanation, corrections[] } }
- *   { success: false, error: string }
+ * Responses always include { requestId } so content.js can discard stale replies.
  */
 
-// ─── Configuration ──────────────────────────────────────────────────────────
+// Firefox / Chrome compatibility shim
+const ext = typeof browser !== 'undefined' ? browser : chrome;
+
+// ─── Configuration ───────────────────────────────────────────────────────────
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
-const MAX_TOKENS = 1500; // Increased from 500 to avoid truncation on longer texts
+const MAX_TOKENS = 1500;
+const MAX_RETRIES = 1;
 
-/**
- * IMPORTANT: Do NOT hard-code your API key here in production.
- * Store it via the extension's Options page → chrome.storage.local.
- * The key is retrieved dynamically on every request below.
- */
+// Cost estimate: GPT-4o-mini ~$0.15/1M input + ~$0.60/1M output
+// Use a blended conservative estimate of $0.40/1M total tokens
+const COST_PER_TOKEN = 0.40 / 1_000_000;
 
-// ─── Language → locale display name map ─────────────────────────────────────
+// ─── Language map ─────────────────────────────────────────────────────────────
 
 const LANGUAGE_NAMES = {
   en: 'English',
@@ -42,19 +44,18 @@ const LANGUAGE_NAMES = {
   ar: 'Arabic (العربية)',
 };
 
-// ─── System prompt factory ───────────────────────────────────────────────────
+const TONE_DESCRIPTIONS = {
+  formal:     'formal and professional',
+  casual:     'friendly and casual',
+  concise:    'concise and direct, removing unnecessary words',
+  persuasive: 'persuasive and compelling',
+};
 
-/**
- * Builds a strict system prompt that forces the model to return
- * only a parseable JSON object — no markdown fences, no prose.
- *
- * @param {string} langCode - BCP-47 language code, e.g. 'en'
- * @returns {string}
- */
-function buildSystemPrompt(langCode) {
+// ─── Prompt factories ─────────────────────────────────────────────────────────
+
+function buildGrammarPrompt(langCode, customPrompt = '') {
   const langName = LANGUAGE_NAMES[langCode] ?? langCode;
-
-  return `You are a professional ${langName} grammar and spell-checking assistant.
+  const base = `You are a professional ${langName} grammar and spell-checking assistant.
 
 The user will send you a piece of text. Your job is to:
 1. Correct all spelling mistakes, grammar errors, punctuation issues, and awkward phrasing.
@@ -73,27 +74,44 @@ The user will send you a piece of text. Your job is to:
   ]
 }
 
-If the text has NO errors, return the original text unchanged and set "explanation" to "No errors found." and "corrections" to [].
+If the text has NO errors, return the original text unchanged, set "explanation" to "No errors found." and "corrections" to [].
 Never include anything outside the JSON object.`;
+
+  return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
+}
+
+function buildTonePrompt(langCode, tone = 'formal', customPrompt = '') {
+  const langName = LANGUAGE_NAMES[langCode] ?? langCode;
+  const toneDesc = TONE_DESCRIPTIONS[tone] ?? tone;
+  const base = `You are a ${langName} writing assistant that rewrites text to be ${toneDesc}.
+
+The user will send you a piece of text. Rewrite it in a ${toneDesc} style while preserving the core meaning.
+Return ONLY a raw JSON object with this exact shape (no markdown, no code fences):
+
+{
+  "correctedText": "<the rewritten text>",
+  "explanation": "<one sentence describing how the tone was adjusted>",
+  "corrections": []
+}
+
+Never include anything outside the JSON object.`;
+
+  return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
+}
+
+// ─── Storage helper ───────────────────────────────────────────────────────────
+
+function storageGet(store, keys) {
+  return new Promise(resolve => store.get(keys, resolve));
 }
 
 // ─── Per-tab in-flight lock ───────────────────────────────────────────────────
-// Prevents overlapping requests from the same tab, which could happen if a
-// slow API response comes back after the user has already triggered another check.
 
 const inFlightTabs = new Set();
 
-// ─── Core API call ───────────────────────────────────────────────────────────
+// ─── Core API call with retry ─────────────────────────────────────────────────
 
-/**
- * Calls the OpenAI Chat Completions endpoint.
- *
- * @param {string} text      - The user's text to check
- * @param {string} language  - BCP-47 language code
- * @param {string} apiKey    - The stored OpenAI API key
- * @returns {Promise<{correctedText, explanation, corrections[]}>}
- */
-async function callGrammarAPI(text, language, apiKey) {
+async function callOpenAI(messages, apiKey, attempt = 0) {
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: {
@@ -103,13 +121,21 @@ async function callGrammarAPI(text, language, apiKey) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      temperature: 0.2, // Low temperature = more deterministic corrections
-      messages: [
-        { role: 'system', content: buildSystemPrompt(language) },
-        { role: 'user',   content: text },
-      ],
+      temperature: 0.2,
+      messages,
     }),
   });
+
+  // Rate limit — surface immediately, do not retry
+  if (response.status === 429) {
+    throw new Error('RATE_LIMIT:OpenAI rate limit reached. Please wait a moment before trying again.');
+  }
+
+  // Server error — retry once after a short delay
+  if (response.status >= 500 && attempt < MAX_RETRIES) {
+    await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    return callOpenAI(messages, apiKey, attempt + 1);
+  }
 
   if (!response.ok) {
     const errBody = await response.json().catch(() => ({}));
@@ -118,17 +144,26 @@ async function callGrammarAPI(text, language, apiKey) {
   }
 
   const payload = await response.json();
-
-  // Extract the raw string from the first choice
   const raw = payload?.choices?.[0]?.message?.content?.trim();
   if (!raw) throw new Error('Empty response from OpenAI API.');
 
-  // Parse the JSON the model returned
-  // Strip accidental code fences just in case the model misbehaves
+  // Track usage
+  const totalTokens = payload.usage?.total_tokens ?? 0;
+  if (totalTokens > 0) {
+    storageGet(ext.storage.local, ['usageStats']).then(({ usageStats = { calls: 0, total_tokens: 0 } }) => {
+      ext.storage.local.set({
+        usageStats: {
+          calls: usageStats.calls + 1,
+          total_tokens: usageStats.total_tokens + totalTokens,
+        },
+      });
+    });
+  }
+
+  // Strip accidental markdown fences
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const parsed = JSON.parse(cleaned);
 
-  // Validate expected shape
   if (typeof parsed.correctedText !== 'string') {
     throw new Error('Malformed API response: missing correctedText.');
   }
@@ -136,59 +171,76 @@ async function callGrammarAPI(text, language, apiKey) {
   return parsed;
 }
 
-// ─── Message listener ────────────────────────────────────────────────────────
+// ─── Message listener ─────────────────────────────────────────────────────────
 
-/**
- * chrome.runtime.onMessage fires whenever content.js (or popup.js)
- * calls chrome.runtime.sendMessage().
- *
- * We must return `true` from the listener to keep the message channel
- * open while the async work resolves (Manifest V3 requirement).
- */
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
-  // ── Grammar check request ──────────────────────────────────────────────────
+  // ── Grammar / tone check ──────────────────────────────────────────────────
   if (message.type === 'CHECK_GRAMMAR') {
-    const { text, language = 'en' } = message;
+    const { text, language = 'en', mode = 'grammar', tone = 'formal', requestId } = message;
     const tabId = _sender.tab?.id ?? 'popup';
 
-    // Reject if a request is already in-flight for this tab
+    // Return IN_FLIGHT code so content.js can schedule a retry
     if (inFlightTabs.has(tabId)) {
-      sendResponse({ success: false, error: 'A check is already in progress. Please wait.' });
+      sendResponse({ success: false, error: 'IN_FLIGHT', requestId });
       return true;
     }
 
-    // Retrieve the API key from secure local storage before every request
-    chrome.storage.local.get(['apiKey'], async ({ apiKey }) => {
+    (async () => {
+      const [{ apiKey }, { customSystemPrompt = '' }] = await Promise.all([
+        storageGet(ext.storage.local, ['apiKey']),
+        storageGet(ext.storage.sync, ['customSystemPrompt']),
+      ]);
+
       if (!apiKey) {
-        sendResponse({ success: false, error: 'No API key set. Please open the extension popup and enter your OpenAI API key.' });
+        sendResponse({ success: false, error: 'NO_API_KEY', requestId });
         return;
       }
 
       inFlightTabs.add(tabId);
       try {
-        const data = await callGrammarAPI(text, language, apiKey);
-        sendResponse({ success: true, data });
+        const systemPrompt = mode === 'tone'
+          ? buildTonePrompt(language, tone, customSystemPrompt)
+          : buildGrammarPrompt(language, customSystemPrompt);
+
+        const data = await callOpenAI(
+          [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
+          apiKey
+        );
+        sendResponse({ success: true, data, requestId });
       } catch (err) {
         console.error('[GrammarAI background]', err);
-        sendResponse({ success: false, error: err.message });
+        sendResponse({ success: false, error: err.message, requestId });
       } finally {
         inFlightTabs.delete(tabId);
       }
-    });
+    })();
 
-    return true; // ← keeps channel open for async sendResponse
+    return true; // keep channel open for async sendResponse
   }
 
-  // ── API key save (called from popup.js) ───────────────────────────────────
+  // ── Save / clear API key ──────────────────────────────────────────────────
   if (message.type === 'SAVE_API_KEY') {
     const key = message.apiKey?.trim();
     if (!key) {
-      // Empty key — clear any stored key
-      chrome.storage.local.remove('apiKey', () => sendResponse({ success: true }));
+      ext.storage.local.remove('apiKey', () => sendResponse({ success: true }));
     } else {
-      chrome.storage.local.set({ apiKey: key }, () => sendResponse({ success: true }));
+      ext.storage.local.set({ apiKey: key }, () => sendResponse({ success: true }));
     }
     return true;
+  }
+
+  // ── Clear usage stats ─────────────────────────────────────────────────────
+  if (message.type === 'CLEAR_USAGE') {
+    ext.storage.local.set({ usageStats: { calls: 0, total_tokens: 0 } }, () =>
+      sendResponse({ success: true })
+    );
+    return true;
+  }
+
+  // ── Open options page (called from content.js) ────────────────────────────
+  if (message.type === 'OPEN_OPTIONS') {
+    ext.runtime.openOptionsPage();
+    return false;
   }
 });

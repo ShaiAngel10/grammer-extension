@@ -1,32 +1,45 @@
 /**
- * popup.js — Popup Controller
+ * popup.js — Popup Controller (v2)
  *
  * Handles:
- *  • Loading persisted settings from chrome.storage.local on open
- *  • Saving new settings and notifying the active tab's content script
- *  • Toggling the extension on/off
- *  • Revealing/hiding the API key field
+ *  • Loading/saving settings from chrome.storage.sync
+ *  • Global enable toggle
+ *  • Per-site disable toggle
+ *  • Mode (grammar / tone) and tone style selection
+ *  • Language selection
+ *  • Usage stats display and clearing
+ *  • Broadcasting settings to the active tab's content script
  */
 
 'use strict';
+
+// Firefox / Chrome compatibility shim
+const ext = typeof browser !== 'undefined' ? browser : chrome;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
 const enabledToggle    = document.getElementById('enabled-toggle');
 const statusText       = document.getElementById('status-text');
 const languageSelect   = document.getElementById('language-select');
-const apiKeyInput      = document.getElementById('api-key-input');
-const toggleVisBtn     = document.getElementById('toggle-key-visibility');
-const saveBtn          = document.getElementById('save-btn');
+const toneSelect       = document.getElementById('tone-select');
+const toneRow          = document.getElementById('tone-row');
+const modeTabs         = document.querySelectorAll('.mode-tab');
+const siteHostnameEl   = document.getElementById('site-hostname');
+const siteToggleBtn    = document.getElementById('site-toggle-btn');
+const usageCallsEl     = document.getElementById('usage-calls');
+const usageTokensEl    = document.getElementById('usage-tokens');
+const usageCostEl      = document.getElementById('usage-cost');
+const clearUsageBtn    = document.getElementById('clear-usage-btn');
 const statusBanner     = document.getElementById('status-banner');
+const optionsBtn       = document.getElementById('options-btn');
+const footerOptionsLink= document.getElementById('footer-options-link');
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-/**
- * Shows a transient status banner inside the popup.
- * @param {'success'|'error'} type
- * @param {string} message
- */
+function storageGet(store, keys) {
+  return new Promise(resolve => store.get(keys, resolve));
+}
+
 function showBanner(type, message) {
   statusBanner.className = type;
   statusBanner.textContent = type === 'success' ? `✓ ${message}` : `✕ ${message}`;
@@ -37,118 +50,153 @@ function showBanner(type, message) {
   }, 3000);
 }
 
-/** Updates the descriptive text beneath the toggle. */
 function updateStatusText(enabled) {
   statusText.textContent = enabled
     ? 'Active — checking text fields'
     : 'Paused — grammar checks disabled';
 }
 
-// ─── Load persisted settings ──────────────────────────────────────────────────
+function formatCost(tokens) {
+  // GPT-4o-mini blended ~$0.40/1M tokens
+  const cost = tokens * 0.40 / 1_000_000;
+  return `$${cost.toFixed(4)}`;
+}
 
-chrome.storage.local.get(
-  ['grammarEnabled', 'grammarLanguage', 'apiKey'],
-  ({ grammarEnabled = true, grammarLanguage = 'en', apiKey = '' }) => {
-    enabledToggle.checked = grammarEnabled;
-    languageSelect.value = grammarLanguage;
-    apiKeyInput.value = apiKey;
-    updateStatusText(grammarEnabled);
+function updateUsageDisplay({ calls = 0, total_tokens = 0 }) {
+  usageCallsEl.textContent  = calls.toLocaleString();
+  usageTokensEl.textContent = total_tokens.toLocaleString();
+  usageCostEl.textContent   = formatCost(total_tokens);
+}
+
+// ─── Per-site state ───────────────────────────────────────────────────────────
+
+let currentHostname = '';
+let disabledSites   = [];
+
+function refreshSiteButton() {
+  const isDisabled = disabledSites.includes(currentHostname);
+  siteToggleBtn.textContent = isDisabled ? 'Enable here' : 'Disable here';
+  siteToggleBtn.classList.toggle('disabled-site', isDisabled);
+}
+
+// ─── Mode tabs ────────────────────────────────────────────────────────────────
+
+let currentMode = 'grammar';
+
+function setMode(mode) {
+  currentMode = mode;
+  modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
+  toneRow.style.display = mode === 'tone' ? 'flex' : 'none';
+}
+
+// ─── Load settings on open ───────────────────────────────────────────────────
+
+(async () => {
+  // Get current tab hostname
+  try {
+    const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+    currentHostname = tab?.url ? new URL(tab.url).hostname : '';
+    siteHostnameEl.textContent = currentHostname || '(no hostname)';
+  } catch {
+    siteHostnameEl.textContent = '(unavailable)';
   }
-);
 
-// ─── Toggle switch ────────────────────────────────────────────────────────────
+  // Load sync settings
+  const sync = await storageGet(ext.storage.sync, [
+    'grammarEnabled', 'grammarLanguage', 'grammarMode', 'grammarTone', 'disabledSites',
+  ]);
+  disabledSites = sync.disabledSites ?? [];
+
+  enabledToggle.checked  = sync.grammarEnabled  ?? true;
+  languageSelect.value   = sync.grammarLanguage  ?? 'en';
+  toneSelect.value       = sync.grammarTone      ?? 'formal';
+  setMode(sync.grammarMode ?? 'grammar');
+  updateStatusText(enabledToggle.checked);
+  refreshSiteButton();
+
+  // Load usage stats
+  const local = await storageGet(ext.storage.local, ['usageStats']);
+  updateUsageDisplay(local.usageStats ?? {});
+})();
+
+// ─── Global enable toggle ─────────────────────────────────────────────────────
 
 enabledToggle.addEventListener('change', () => {
   const enabled = enabledToggle.checked;
   updateStatusText(enabled);
-
-  // Persist immediately — don't wait for "Save"
-  chrome.storage.local.set({ grammarEnabled: enabled });
-
-  // Notify content script in the active tab
-  broadcastSettings({ enabled, language: languageSelect.value });
+  ext.storage.sync.set({ grammarEnabled: enabled });
+  broadcastSettings();
 });
 
-// ─── Language change ──────────────────────────────────────────────────────────
+// ─── Per-site toggle ──────────────────────────────────────────────────────────
+
+siteToggleBtn.addEventListener('click', () => {
+  if (!currentHostname) return;
+  const isDisabled = disabledSites.includes(currentHostname);
+  if (isDisabled) {
+    disabledSites = disabledSites.filter(h => h !== currentHostname);
+  } else {
+    disabledSites = [...disabledSites, currentHostname];
+  }
+  ext.storage.sync.set({ disabledSites });
+  refreshSiteButton();
+  broadcastSettings();
+});
+
+// ─── Mode tabs ────────────────────────────────────────────────────────────────
+
+modeTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    setMode(tab.dataset.mode);
+    ext.storage.sync.set({ grammarMode: currentMode });
+    broadcastSettings();
+  });
+});
+
+// ─── Tone selector ────────────────────────────────────────────────────────────
+
+toneSelect.addEventListener('change', () => {
+  ext.storage.sync.set({ grammarTone: toneSelect.value });
+  broadcastSettings();
+});
+
+// ─── Language selector ────────────────────────────────────────────────────────
 
 languageSelect.addEventListener('change', () => {
-  // Persist immediately so background.js picks it up on next request
-  chrome.storage.local.set({ grammarLanguage: languageSelect.value });
-
-  // Broadcast to active tab so content script switches language without reload
-  broadcastSettings({ enabled: enabledToggle.checked, language: languageSelect.value });
+  ext.storage.sync.set({ grammarLanguage: languageSelect.value });
+  broadcastSettings();
 });
 
-// ─── API key visibility toggle ────────────────────────────────────────────────
+// ─── Usage ────────────────────────────────────────────────────────────────────
 
-toggleVisBtn.addEventListener('click', () => {
-  const isHidden = apiKeyInput.type === 'password';
-  apiKeyInput.type = isHidden ? 'text' : 'password';
-  toggleVisBtn.textContent = isHidden ? '🙈' : '👁';
+clearUsageBtn.addEventListener('click', async () => {
+  await ext.runtime.sendMessage({ type: 'CLEAR_USAGE' });
+  updateUsageDisplay({ calls: 0, total_tokens: 0 });
+  showBanner('success', 'Usage cleared');
 });
 
-// ─── Save button ──────────────────────────────────────────────────────────────
+// ─── Options page ─────────────────────────────────────────────────────────────
 
-saveBtn.addEventListener('click', async () => {
-  const apiKey   = apiKeyInput.value.trim();
-  const language = languageSelect.value;
-  const enabled  = enabledToggle.checked;
+function openOptions() { ext.runtime.openOptionsPage(); }
+optionsBtn.addEventListener('click', openOptions);
+footerOptionsLink.addEventListener('click', (e) => { e.preventDefault(); openOptions(); });
 
-  // Validate key format loosely (allow empty to clear the stored key)
-  if (apiKey && !apiKey.startsWith('sk-')) {
-    showBanner('error', 'API key should start with "sk-"');
-    return;
-  }
+// ─── Broadcast to content script ─────────────────────────────────────────────
 
-  // Disable button while saving
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving…';
-
+async function broadcastSettings() {
   try {
-    // Persist language and enabled state to local storage
-    await chrome.storage.local.set({ grammarLanguage: language, grammarEnabled: enabled });
-
-    // Forward the API key to background.js — it handles both saving and clearing
-    // (empty string → clears the stored key; non-empty → saves it)
-    const response = await chrome.runtime.sendMessage({
-      type: 'SAVE_API_KEY',
-      apiKey,
-    });
-    if (!response?.success) throw new Error('Background failed to save key.');
-
-    // Broadcast settings update to content scripts on the active tab
-    await broadcastSettings({ enabled, language });
-
-    showBanner('success', apiKey ? 'Settings saved' : 'API key cleared');
-  } catch (err) {
-    console.error('[GrammarAI popup]', err);
-    showBanner('error', err.message || 'Failed to save settings.');
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save Settings';
-  }
-});
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Sends a SETTINGS_UPDATED message to the content script running in the
- * currently active tab. The content script uses this to update its
- * isEnabled and selectedLanguage state immediately without a page reload.
- *
- * @param {{ enabled: boolean, language: string }} settings
- */
-async function broadcastSettings(settings) {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
-
-    await chrome.tabs.sendMessage(tab.id, {
-      type: 'SETTINGS_UPDATED',
-      enabled: settings.enabled,
-      language: settings.language,
+    const siteDisabled = disabledSites.includes(currentHostname);
+    await ext.tabs.sendMessage(tab.id, {
+      type:        'SETTINGS_UPDATED',
+      enabled:     enabledToggle.checked,
+      language:    languageSelect.value,
+      mode:        currentMode,
+      tone:        toneSelect.value,
+      siteDisabled,
     });
-  } catch (_err) {
-    // Content script might not be injected on chrome:// pages — ignore
+  } catch {
+    // Content script not injected on this page — ignore
   }
 }

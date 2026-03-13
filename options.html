@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GrammarAI — Settings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0c0c10;
+      --surface:     #14141c;
+      --surface-2:   #1c1c28;
+      --border:      rgba(167, 139, 250, 0.18);
+      --accent:      #a78bfa;
+      --accent-dark: #7c3aed;
+      --text:        #e2e8f0;
+      --text-muted:  #64748b;
+      --success:     #4ade80;
+      --danger:      #f87171;
+      --radius:      10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      padding-bottom: 48px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      border-radius: 9px;
+      display: grid; place-items: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+
+    .logo-text strong { display: block; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+    .logo-text span   { font-size: 12px; color: var(--text-muted); }
+
+    /* ── Page layout ── */
+    .page { max-width: 600px; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 28px; }
+
+    /* ── Section card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-header h2 { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+    .card-header p  { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.5; }
+
+    .card-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Form elements ── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    label {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    input[type="password"],
+    input[type="text"],
+    textarea {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13.5px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+    }
+
+    input[type="password"],
+    input[type="text"] { padding: 9px 12px; }
+
+    textarea {
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.55;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+    }
+
+    .input-wrap { position: relative; }
+    .input-wrap input { padding-right: 42px; }
+
+    .toggle-vis {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 15px; padding: 4px;
+      transition: color 0.15s;
+    }
+    .toggle-vis:hover { color: var(--text); }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      align-self: flex-start;
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      color: #fff; border: none; border-radius: var(--radius);
+      font-size: 13.5px; font-weight: 700; font-family: inherit;
+      letter-spacing: 0.02em; padding: 9px 20px;
+      cursor: pointer; transition: opacity 0.15s, transform 0.12s;
+    }
+    .btn-primary:hover   { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:active  { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text-muted);
+      cursor: pointer; font-size: 12.5px; font-family: inherit;
+      padding: 6px 14px; transition: all 0.15s;
+    }
+    .btn-ghost:hover { color: var(--danger); border-color: var(--danger); }
+
+    /* ── Status banner ── */
+    .status-banner {
+      display: none; align-items: center; gap: 8px;
+      padding: 9px 12px; border-radius: var(--radius);
+      font-size: 12.5px; font-weight: 500;
+    }
+    .status-banner.success {
+      display: flex;
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.25);
+      color: var(--success);
+    }
+    .status-banner.error {
+      display: flex;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.25);
+      color: var(--danger);
+    }
+
+    /* ── Ignored phrases list ── */
+    #ignored-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+
+    .ignored-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .ignored-remove {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 13px; padding: 2px 6px;
+      border-radius: 4px; transition: color 0.12s, background 0.12s;
+    }
+    .ignored-remove:hover { color: var(--danger); background: rgba(248,113,113,0.1); }
+
+    #no-ignored { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
+
+    .card-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* ── Usage stats ── */
+    .usage-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .usage-stat {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px; text-align: center;
+    }
+
+    .usage-stat .value { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .usage-stat .key   { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; font-size: 12px;
+      color: var(--text-muted); padding: 24px;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-icon">✦</div>
+    <div class="logo-text">
+      <strong>GrammarAI</strong>
+      <span>Settings</span>
+    </div>
+  </header>
+
+  <div class="page">
+
+    <!-- API Key -->
+    <div class="card">
+      <div class="card-header">
+        <h2>OpenAI API Key</h2>
+        <p>Your key is stored locally on this device only and never transmitted anywhere except to openai.com.</p>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="api-key-input">API Key</label>
+          <div class="input-wrap">
+            <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+            <button class="toggle-vis" id="toggle-vis-btn" title="Show / hide key">👁</button>
+          </div>
+        </div>
+        <div class="status-banner" id="key-banner"></div>
+        <button class="btn-primary" id="save-key-btn">Save Key</button>
+      </div>
+    </div>
+
+    <!-- Custom system prompt -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Custom Instructions</h2>
+        <p>Extra instructions appended to the grammar check prompt. Useful for domain-specific style rules (e.g. "avoid passive voice", "use American English").</p>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="custom-prompt-input">Additional Instructions</label>
+          <textarea id="custom-prompt-input" placeholder="e.g. Use Oxford commas. Prefer active voice."></textarea>
+        </div>
+        <div class="status-banner" id="prompt-banner"></div>
+        <button class="btn-primary" id="save-prompt-btn">Save Instructions</button>
+      </div>
+    </div>
+
+    <!-- Ignored phrases -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Ignored Phrases</h2>
+        <p>Words and phrases you've chosen to ignore. They won't appear in grammar suggestions.</p>
+      </div>
+      <div class="card-body">
+        <ul id="ignored-list"></ul>
+        <p id="no-ignored">No ignored phrases yet.</p>
+      </div>
+      <div class="card-footer">
+        <span id="ignored-count" style="font-size:12.5px;color:var(--text-muted)">0 phrases</span>
+        <button class="btn-ghost" id="clear-ignored-btn">Clear All</button>
+      </div>
+    </div>
+
+    <!-- Usage stats -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Usage Statistics</h2>
+        <p>Tracked locally. Cost estimate uses a blended rate of $0.40/1M tokens.</p>
+      </div>
+      <div class="card-body">
+        <div class="usage-grid">
+          <div class="usage-stat">
+            <div class="value" id="stat-calls">0</div>
+            <div class="key">API Calls</div>
+          </div>
+          <div class="usage-stat">
+            <div class="value" id="stat-tokens">0</div>
+            <div class="key">Tokens</div>
+          </div>
+          <div class="usage-stat">
+            <div class="value" id="stat-cost">$0.00</div>
+            <div class="key">Est. Cost</div>
+          </div>
+        </div>
+        <button class="btn-ghost" id="clear-usage-btn" style="align-self:flex-start">Clear Stats</button>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    GrammarAI v2.0 · Powered by <a href="https://openai.com" target="_blank" rel="noopener noreferrer">GPT-4o mini</a>
+  </footer>
+
+  <script src="options.js"></script>
+</body>
+</html>

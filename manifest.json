@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GrammarAI — Real-Time Writing Assistant",
-  "version": "1.0.0",
-  "description": "AI-powered real-time grammar and spell-checking across multiple languages using GPT-4o-mini.",
-  "minimum_chrome_version": "116",
+  "version": "2.0.0",
+  "description": "AI-powered real-time grammar, spell-checking, and tone rewriting across multiple languages using GPT-4o-mini.",
 
   "permissions": [
     "storage",
@@ -37,6 +36,8 @@
       "128": "icon128.png"
     }
   },
+
+  "options_page": "options.html",
 
   "icons": {
     "16": "icon16.png",

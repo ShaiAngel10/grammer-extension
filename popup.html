@@ -5,22 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GrammarAI</title>
   <style>
-    /* ── Reset ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ── Tokens ── */
     :root {
-      --bg: #0c0c10;
-      --surface: #14141c;
-      --surface-2: #1c1c28;
-      --border: rgba(167, 139, 250, 0.18);
-      --accent: #a78bfa;
+      --bg:          #0c0c10;
+      --surface:     #14141c;
+      --surface-2:   #1c1c28;
+      --border:      rgba(167, 139, 250, 0.18);
+      --accent:      #a78bfa;
       --accent-dark: #7c3aed;
-      --text: #e2e8f0;
-      --text-muted: #64748b;
-      --success: #4ade80;
-      --danger: #f87171;
-      --radius: 10px;
+      --text:        #e2e8f0;
+      --text-muted:  #64748b;
+      --success:     #4ade80;
+      --danger:      #f87171;
+      --radius:      10px;
     }
 
     body {
@@ -29,7 +27,6 @@
       color: var(--text);
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
       font-size: 13.5px;
-      padding: 0;
       overflow: hidden;
     }
 
@@ -37,151 +34,89 @@
     header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
-      padding: 16px 18px 14px;
+      padding: 14px 18px;
       display: flex;
       align-items: center;
       gap: 10px;
     }
 
     .logo-icon {
-      width: 32px;
-      height: 32px;
+      width: 30px; height: 30px;
       background: linear-gradient(135deg, var(--accent-dark), var(--accent));
       border-radius: 8px;
-      display: grid;
-      place-items: center;
-      font-size: 16px;
-      flex-shrink: 0;
+      display: grid; place-items: center;
+      font-size: 15px; flex-shrink: 0;
     }
 
-    .logo-text {
-      line-height: 1;
-    }
+    .logo-text strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: -0.02em; }
+    .logo-text span   { font-size: 11px; color: var(--text-muted); }
 
-    .logo-text strong {
-      display: block;
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--text);
-    }
+    .header-actions { margin-left: auto; display: flex; gap: 6px; }
 
-    .logo-text span {
-      font-size: 11px;
-      color: var(--text-muted);
-      letter-spacing: 0.01em;
+    .icon-btn {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; padding: 4px 6px; border-radius: 6px;
+      font-size: 14px; transition: color 0.15s, background 0.15s;
     }
+    .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 
     /* ── Toggle row ── */
     .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 18px;
-      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
     }
 
-    .toggle-label {
-      font-weight: 600;
-      color: var(--text);
-    }
+    .toggle-label { font-weight: 600; }
+    .toggle-sub   { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 
-    .toggle-sub {
-      font-size: 11.5px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    /* Pill toggle */
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-      position: absolute;
-    }
-
+    .toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
     .toggle-track {
-      position: absolute;
-      inset: 0;
+      position: absolute; inset: 0;
       background: var(--surface-2);
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 999px;
-      cursor: pointer;
+      border-radius: 999px; cursor: pointer;
       transition: background 0.2s, border-color 0.2s;
     }
-
     .toggle-track::after {
-      content: '';
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 16px;
-      height: 16px;
-      background: var(--text-muted);
-      border-radius: 50%;
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      background: var(--text-muted); border-radius: 50%;
       transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), background 0.2s;
     }
-
     .toggle-switch input:checked + .toggle-track {
       background: linear-gradient(135deg, var(--accent-dark), var(--accent));
       border-color: transparent;
     }
-
     .toggle-switch input:checked + .toggle-track::after {
-      transform: translateX(20px);
-      background: #fff;
+      transform: translateX(20px); background: #fff;
     }
 
     /* ── Body ── */
-    .popup-body {
-      padding: 16px 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
+    .popup-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
 
-    /* ── Form field ── */
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
+    /* ── Field ── */
+    .field { display: flex; flex-direction: column; gap: 5px; }
 
     label {
-      font-size: 11.5px;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
       color: var(--text-muted);
     }
 
-    select, input[type="password"], input[type="text"] {
-      width: 100%;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 13px;
-      font-family: inherit;
-      padding: 9px 12px;
-      outline: none;
+    select, input[type="text"] {
+      width: 100%; background: var(--surface-2);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      padding: 8px 12px; outline: none;
       transition: border-color 0.18s, box-shadow 0.18s;
       appearance: none;
     }
 
     select {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      padding-right: 32px;
-      cursor: pointer;
+      background-repeat: no-repeat; background-position: right 12px center;
+      padding-right: 32px; cursor: pointer;
     }
 
     select:focus, input:focus {
@@ -189,82 +124,92 @@
       box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
     }
 
-    select option {
-      background: #1c1c28;
+    select option { background: #1c1c28; }
+
+    /* ── Segmented mode control ── */
+    .mode-tabs {
+      display: grid; grid-template-columns: 1fr 1fr;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
     }
 
-    .api-key-wrap {
-      position: relative;
+    .mode-tab {
+      padding: 7px; text-align: center;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; user-select: none;
+      border: none; background: none;
+      color: var(--text-muted); font-family: inherit;
+      transition: background 0.15s, color 0.15s;
     }
 
-    .api-key-wrap input {
-      padding-right: 40px;
-    }
-
-    .toggle-visibility {
-      position: absolute;
-      right: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-size: 14px;
-      padding: 4px;
-      transition: color 0.15s;
-    }
-    .toggle-visibility:hover { color: var(--text); }
-
-    /* ── Save button ── */
-    .save-btn {
-      width: 100%;
+    .mode-tab.active {
       background: linear-gradient(135deg, var(--accent-dark), var(--accent));
       color: #fff;
-      border: none;
+    }
+
+    /* ── Site row ── */
+    .site-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      font-size: 13.5px;
-      font-weight: 700;
-      font-family: inherit;
-      letter-spacing: 0.02em;
-      padding: 10px;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.12s;
     }
 
-    .save-btn:hover {
-      opacity: 0.88;
-      transform: translateY(-1px);
+    .site-row-label { font-size: 12px; color: var(--text-muted); }
+    .site-row-host  { font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+
+    .site-disable-btn {
+      flex-shrink: 0;
+      font-size: 11.5px; font-weight: 600; font-family: inherit;
+      padding: 5px 10px; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface); color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .site-disable-btn:hover         { color: var(--danger); border-color: var(--danger); }
+    .site-disable-btn.disabled-site { color: var(--success); border-color: var(--success); }
+
+    /* ── Usage ── */
+    .usage-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
     }
 
-    .save-btn:active {
-      transform: translateY(0);
+    .usage-stats { line-height: 1.6; }
+    .usage-line  { font-size: 12px; color: var(--text-muted); }
+    .usage-line span { color: var(--text); font-weight: 600; }
+
+    .clear-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text-muted);
+      cursor: pointer; font-size: 11.5px; font-family: inherit;
+      padding: 4px 9px; transition: all 0.15s;
     }
+    .clear-btn:hover { color: var(--danger); border-color: var(--danger); }
 
     /* ── Status banner ── */
     #status-banner {
-      display: none;
-      align-items: center;
-      gap: 8px;
-      padding: 9px 12px;
-      border-radius: var(--radius);
-      font-size: 12.5px;
-      font-weight: 500;
+      display: none; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: var(--radius);
+      font-size: 12.5px; font-weight: 500;
       animation: fadein 0.2s ease both;
     }
-
     @keyframes fadein {
       from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
+      to   { opacity: 1; transform: translateY(0);   }
     }
-
     #status-banner.success {
       display: flex;
       background: rgba(74, 222, 128, 0.1);
       border: 1px solid rgba(74, 222, 128, 0.25);
       color: var(--success);
     }
-
     #status-banner.error {
       display: flex;
       background: rgba(248, 113, 113, 0.1);
@@ -275,16 +220,12 @@
     /* ── Footer ── */
     footer {
       border-top: 1px solid var(--border);
-      padding: 10px 18px;
+      padding: 9px 18px;
       text-align: center;
-      font-size: 11px;
-      color: var(--text-muted);
+      font-size: 11px; color: var(--text-muted);
     }
-
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -296,9 +237,12 @@
       <strong>GrammarAI</strong>
       <span>Real-Time Writing Assistant</span>
     </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="options-btn" title="Options">⚙</button>
+    </div>
   </header>
 
-  <!-- Enable / Disable toggle -->
+  <!-- Global enable toggle -->
   <div class="toggle-row">
     <div>
       <div class="toggle-label">Enable GrammarAI</div>
@@ -310,12 +254,41 @@
     </label>
   </div>
 
-  <!-- Settings -->
+  <!-- Settings body -->
   <div class="popup-body">
+
+    <!-- Per-site disable -->
+    <div class="site-row">
+      <div>
+        <div class="site-row-label">Current site</div>
+        <div class="site-row-host" id="site-hostname">—</div>
+      </div>
+      <button class="site-disable-btn" id="site-toggle-btn">Disable here</button>
+    </div>
+
+    <!-- Mode tabs -->
+    <div class="field">
+      <label>Mode</label>
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="grammar">✦ Grammar Check</button>
+        <button class="mode-tab"        data-mode="tone">🎨 Tone Rewrite</button>
+      </div>
+    </div>
+
+    <!-- Tone selector (shown only in tone mode) -->
+    <div class="field" id="tone-row" style="display:none">
+      <label for="tone-select">Tone Style</label>
+      <select id="tone-select">
+        <option value="formal">🎩 Formal &amp; Professional</option>
+        <option value="casual">😊 Casual &amp; Friendly</option>
+        <option value="concise">⚡ Concise &amp; Direct</option>
+        <option value="persuasive">💡 Persuasive &amp; Compelling</option>
+      </select>
+    </div>
 
     <!-- Language selector -->
     <div class="field">
-      <label for="language-select">Target Language</label>
+      <label for="language-select">Language</label>
       <select id="language-select">
         <option value="en">🇬🇧 English</option>
         <option value="es">🇪🇸 Spanish — Español</option>
@@ -332,32 +305,23 @@
       </select>
     </div>
 
-    <!-- OpenAI API key -->
-    <div class="field">
-      <label for="api-key-input">OpenAI API Key</label>
-      <div class="api-key-wrap">
-        <input
-          type="password"
-          id="api-key-input"
-          placeholder="sk-..."
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button class="toggle-visibility" id="toggle-key-visibility" title="Show/hide key">👁</button>
+    <!-- Usage stats -->
+    <div class="usage-row">
+      <div class="usage-stats">
+        <div class="usage-line"><span id="usage-calls">0</span> API calls · <span id="usage-tokens">0</span> tokens</div>
+        <div class="usage-line">Est. cost: <span id="usage-cost">$0.0000</span></div>
       </div>
+      <button class="clear-btn" id="clear-usage-btn">Clear</button>
     </div>
 
     <!-- Status banner -->
     <div id="status-banner"></div>
 
-    <!-- Save -->
-    <button class="save-btn" id="save-btn">Save Settings</button>
-
   </div>
 
   <footer>
     Powered by <a href="https://openai.com" target="_blank" rel="noopener noreferrer">GPT-4o mini</a> ·
-    Your key is stored locally only
+    <a href="#" id="footer-options-link">Settings</a>
   </footer>
 
   <script src="popup.js"></script>

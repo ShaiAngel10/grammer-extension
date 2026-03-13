@@ -446,8 +446,20 @@ async function requestGrammarCheck(el) {
 
 // ─── Element attachment ───────────────────────────────────────────────────────
 
+function isEffectivelyEditable(el) {
+  // Skip read-only and disabled inputs
+  if (el.readOnly || el.disabled) return false;
+  // For contenteditable, skip elements where the attribute is explicitly "false"
+  if (el.hasAttribute('contenteditable') && el.getAttribute('contenteditable') === 'false') return false;
+  // Skip elements that don't accept user input based on aria role
+  const role = el.getAttribute('role');
+  if (role && ['presentation', 'none', 'img', 'log', 'status'].includes(role)) return false;
+  return true;
+}
+
 function attachToElement(el) {
   if (el.hasAttribute(ACTIVE_FIELD_ATTR)) return;
+  if (!isEffectivelyEditable(el)) return;
   el.setAttribute(ACTIVE_FIELD_ATTR, '1');
 
   // Offline fallback: enable native browser spellcheck when no API key is set

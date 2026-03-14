@@ -177,6 +177,7 @@ function repositionCurrentTooltip() {
 // ─── Tooltip cleanup ──────────────────────────────────────────────────────────
 
 function removeTooltip() {
+  const prevTarget = currentTooltipTarget;
   document.getElementById(TOOLTIP_ID)?.remove();
   currentTooltipTarget = null;
   tooltipInUndoMode = false;
@@ -191,6 +192,11 @@ function removeTooltip() {
   }
   window.removeEventListener('scroll', repositionCurrentTooltip, true);
   window.removeEventListener('resize', repositionCurrentTooltip);
+
+  // Re-show icon if the field is still focused
+  if (prevTarget && document.activeElement === prevTarget && isEnabled && !isSiteDisabled) {
+    showConstantIcon(prevTarget);
+  }
 }
 
 // ─── Undo bar ─────────────────────────────────────────────────────────────────
@@ -238,7 +244,7 @@ function buildHighlightedHTML(text, corrections) {
   let pos  = 0;
   for (const { start, end } of merged) {
     html += escapeHTML(text.slice(pos, start));
-    html += `<mark class="grammarai-mark">${escapeHTML(text.slice(start, end))}</mark>`;
+    html += `<span class="grammarai-mark">${escapeHTML(text.slice(start, end))}</span>`;
     pos = end;
   }
   html += escapeHTML(text.slice(pos));
@@ -342,7 +348,7 @@ function showConstantIcon(el) {
     const result   = lastResults.get(el);
     const origText = lastTexts.get(el);
     if (result && origText) {
-      removeConstantIcon(el);
+      // Keep the icon visible — just open the tooltip alongside it
       showTooltip(el, result, origText);
     }
   };

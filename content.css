@@ -311,6 +311,7 @@
 
 .grammarai-mark {
   color: transparent;
+  background: transparent !important;
   text-decoration: underline wavy #ef4444;
   text-decoration-thickness: 1.5px;
   text-underline-offset: 2px;

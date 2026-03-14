@@ -27,6 +27,7 @@ const DEBOUNCE_MS       = 850;
 const MIN_TEXT_LENGTH   = 15;
 const TOOLTIP_ID        = 'grammarai-tooltip';
 const UNDO_BAR_ID       = 'grammarai-undo-bar';
+const FLOAT_ID          = 'grammarai-float-icon';
 const ACTIVE_FIELD_ATTR = 'data-grammarai-active';
 const EDITABLE_SELECTOR = 'textarea, input[type="text"], input[type="search"], [contenteditable]';
 
@@ -64,6 +65,9 @@ let currentTooltipTarget  = null;
 let outsideClickHandler   = null;
 let keyboardHandler       = null;
 let undoBarTimer          = null;
+
+// Floating icon state
+let floatScrollHandler    = null;
 
 // ─── Readability ──────────────────────────────────────────────────────────────
 
@@ -233,6 +237,86 @@ function showUndoBar(targetEl, originalText) {
   });
 
   undoBarTimer = setTimeout(() => bar.remove(), 5000);
+}
+
+// ─── Floating icon ────────────────────────────────────────────────────────────
+
+function removeFloatingIcon() {
+  document.getElementById(FLOAT_ID)?.remove();
+  if (floatScrollHandler) {
+    window.removeEventListener('scroll', floatScrollHandler, true);
+    window.removeEventListener('resize', floatScrollHandler);
+    floatScrollHandler = null;
+  }
+}
+
+function showFloatingIcon(targetEl, result, originalText) {
+  removeFloatingIcon();
+
+  const { type = 'fix', corrections = [] } = result;
+  const validCorr = corrections.filter(c => c.original?.trim() && c.corrected?.trim());
+  const count     = validCorr.length;
+  const isRephrase = type === 'rephrase';
+
+  const icon = document.createElement('div');
+  icon.id = FLOAT_ID;
+
+  const badge = count > 0
+    ? `<span class="grammarai-float-badge">${count}</span>`
+    : '';
+
+  const viewLabel = isRephrase
+    ? '✏ View rephrase suggestion'
+    : `✦ View ${count} fix${count !== 1 ? 'es' : ''}`;
+
+  icon.innerHTML = `
+    <div class="grammarai-float-menu">
+      <button class="grammarai-float-view">${viewLabel}</button>
+      <button class="grammarai-float-dismiss">✕ Dismiss</button>
+    </div>
+    <div class="grammarai-float-btn">
+      <span class="grammarai-float-symbol">✦</span>
+      ${badge}
+    </div>
+  `;
+
+  const positionIcon = () => {
+    const r = targetEl.getBoundingClientRect();
+    icon.style.top  = `${r.bottom + window.scrollY - 14}px`;
+    icon.style.left = `${r.right  + window.scrollX - 14}px`;
+  };
+
+  document.body.appendChild(icon);
+  positionIcon();
+
+  floatScrollHandler = positionIcon;
+  window.addEventListener('scroll', floatScrollHandler, true);
+  window.addEventListener('resize', floatScrollHandler);
+
+  const btn  = icon.querySelector('.grammarai-float-btn');
+  const menu = icon.querySelector('.grammarai-float-menu');
+
+  // Show mini-menu on hover
+  icon.addEventListener('mouseenter', () => menu.classList.add('grammarai-float-menu--open'));
+  icon.addEventListener('mouseleave', () => menu.classList.remove('grammarai-float-menu--open'));
+
+  // Click the icon button → open full tooltip
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeFloatingIcon();
+    showTooltip(targetEl, result, originalText);
+  });
+
+  icon.querySelector('.grammarai-float-view').addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeFloatingIcon();
+    showTooltip(targetEl, result, originalText);
+  });
+
+  icon.querySelector('.grammarai-float-dismiss').addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeFloatingIcon();
+  });
 }
 
 // ─── Error tooltip ────────────────────────────────────────────────────────────
@@ -544,7 +628,7 @@ async function requestGrammarCheck(el) {
       return;
     }
 
-    showTooltip(el, response.data, text);
+    showFloatingIcon(el, response.data, text);
 
   } catch (err) {
     hideSpinner(el);
@@ -580,6 +664,7 @@ function attachToElement(el) {
 
   el.addEventListener('input', () => {
     removeTooltip();
+    removeFloatingIcon();
     clearTimeout(debounceTimers.get(el));
     debounceTimers.set(el, setTimeout(() => requestGrammarCheck(el), DEBOUNCE_MS));
   });
@@ -625,7 +710,7 @@ ext.runtime.onMessage.addListener((message) => {
   if (message.shortcutApply   !== undefined) shortcutApply   = message.shortcutApply;
   if (message.shortcutDismiss !== undefined) shortcutDismiss = message.shortcutDismiss;
   if (message.shortcutUndo    !== undefined) shortcutUndo    = message.shortcutUndo;
-  if (!isEnabled || isSiteDisabled) removeTooltip();
+  if (!isEnabled || isSiteDisabled) { removeTooltip(); removeFloatingIcon(); }
 });
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

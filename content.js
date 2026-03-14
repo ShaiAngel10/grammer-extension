@@ -720,10 +720,13 @@ async function requestGrammarCheck(el) {
     // Update live underline overlay
     createOrUpdateOverlay(el);
 
-    // Update badge — pass hasChanges so the view button shows even when
-    // the corrections list is empty (e.g. rephrase, or poorly-formatted fix)
     const hasChanges = (result.correctedText ?? '').trim() !== text.trim();
     updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase', hasChanges);
+
+    // Auto-show the tooltip immediately when there are suggestions
+    if (hasChanges) {
+      showTooltip(el, result, text);
+    }
 
   } catch (err) {
     hideSpinner(el);

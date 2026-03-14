@@ -208,7 +208,7 @@ function removeTooltip() {
     outsideClickHandler = null;
   }
   if (keyboardHandler) {
-    document.removeEventListener('keydown', keyboardHandler);
+    document.removeEventListener('keydown', keyboardHandler, true);
     keyboardHandler = null;
   }
   window.removeEventListener('scroll', repositionCurrentTooltip, true);
@@ -419,6 +419,9 @@ function showTooltip(targetEl, result, originalText) {
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
 
+    // Always show the floating undo bar — easy to find regardless of tooltip state
+    showUndoBar(targetEl, textBefore);
+
     if (btnShowUndo) {
       const UNDO_DURATION = 5000;
       tooltipInUndoMode = true;
@@ -488,7 +491,7 @@ function showTooltip(targetEl, result, originalText) {
       }
     }
   };
-  document.addEventListener('keydown', keyboardHandler);
+  document.addEventListener('keydown', keyboardHandler, true);
 
   // Auto-focus tooltip for keyboard nav, but don't steal from the input
   setTimeout(() => { if (document.activeElement !== targetEl) tooltip.focus(); }, 0);

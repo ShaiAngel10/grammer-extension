@@ -262,6 +262,7 @@ function syncOverlayStyles(overlay, el) {
   overlay.style.fontSize        = s.fontSize;
   overlay.style.fontWeight      = s.fontWeight;
   overlay.style.fontStyle       = s.fontStyle;
+  overlay.style.fontVariant     = s.fontVariant;
   overlay.style.lineHeight      = s.lineHeight;
   overlay.style.letterSpacing   = s.letterSpacing;
   overlay.style.wordSpacing     = s.wordSpacing;
@@ -273,10 +274,15 @@ function syncOverlayStyles(overlay, el) {
   overlay.style.borderRightWidth  = s.borderRightWidth;
   overlay.style.borderBottomWidth = s.borderBottomWidth;
   overlay.style.borderLeftWidth   = s.borderLeftWidth;
+  overlay.style.boxSizing    = s.boxSizing;
   overlay.style.textIndent   = s.textIndent;
   overlay.style.whiteSpace   = el.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
-  overlay.style.wordWrap     = 'break-word';
-  overlay.style.overflowWrap = 'break-word';
+  overlay.style.wordBreak    = s.wordBreak;
+  overlay.style.wordWrap     = s.wordWrap || 'break-word';
+  overlay.style.overflowWrap = s.overflowWrap || 'break-word';
+  overlay.style.tabSize      = s.tabSize;
+  overlay.style.direction    = s.direction;
+  overlay.style.unicodeBidi  = s.unicodeBidi;
 }
 
 function createOrUpdateOverlay(el) {
@@ -324,7 +330,7 @@ function showConstantIcon(el) {
   icon.innerHTML = `
     <div class="grammarai-float-menu">
       <button class="grammarai-float-view" style="display:none">✦ Checking…</button>
-      <div class="grammarai-float-divider"></div>
+      <div class="grammarai-float-divider" style="display:none"></div>
       <button class="grammarai-float-siteoff">🚫 Turn off for this site</button>
       <button class="grammarai-float-settings">⚙ Settings</button>
     </div>
@@ -382,7 +388,7 @@ function showConstantIcon(el) {
   window.addEventListener('resize', reposition);
 }
 
-function updateConstantIconBadge(el, count, isRephrase) {
+function updateConstantIconBadge(el, count, isRephrase, hasChanges = false) {
   const icon = constantIcons.get(el);
   if (!icon) return;
 
@@ -391,7 +397,7 @@ function updateConstantIconBadge(el, count, isRephrase) {
 
   btn.querySelector('.grammarai-float-badge')?.remove();
 
-  if (count > 0 || isRephrase) {
+  if (hasChanges && (count > 0 || isRephrase)) {
     const badge = document.createElement('span');
     badge.className   = 'grammarai-float-badge';
     badge.textContent = isRephrase ? '✏' : String(count);
@@ -399,11 +405,20 @@ function updateConstantIconBadge(el, count, isRephrase) {
     btn.appendChild(badge);
   }
 
-  if (viewBtn && (count > 0 || isRephrase)) {
-    viewBtn.style.display = '';
-    viewBtn.textContent   = isRephrase
-      ? '✏ View rephrase suggestion'
-      : `✦ View ${count} fix${count !== 1 ? 'es' : ''}`;
+  const divider = icon.querySelector('.grammarai-float-divider');
+  if (viewBtn) {
+    if (hasChanges) {
+      viewBtn.style.display = '';
+      if (divider) divider.style.display = '';
+      viewBtn.textContent   = isRephrase
+        ? '✏ View rephrase suggestion'
+        : count > 0
+          ? `✦ View ${count} fix${count !== 1 ? 'es' : ''}`
+          : '✦ View suggestion';
+    } else {
+      viewBtn.style.display = 'none';
+      if (divider) divider.style.display = 'none';
+    }
   }
 }
 
@@ -705,11 +720,10 @@ async function requestGrammarCheck(el) {
     // Update live underline overlay
     createOrUpdateOverlay(el);
 
-    // Only update badge if there are actual suggestions to show
+    // Update badge — pass hasChanges so the view button shows even when
+    // the corrections list is empty (e.g. rephrase, or poorly-formatted fix)
     const hasChanges = (result.correctedText ?? '').trim() !== text.trim();
-    if (hasChanges) {
-      updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase');
-    }
+    updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase', hasChanges);
 
   } catch (err) {
     hideSpinner(el);

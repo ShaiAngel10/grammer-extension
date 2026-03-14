@@ -399,7 +399,7 @@ function updateConstantIconBadge(el, count, isRephrase) {
     btn.appendChild(badge);
   }
 
-  if (viewBtn) {
+  if (viewBtn && (count > 0 || isRephrase)) {
     viewBtn.style.display = '';
     viewBtn.textContent   = isRephrase
       ? '✏ View rephrase suggestion'
@@ -705,8 +705,11 @@ async function requestGrammarCheck(el) {
     // Update live underline overlay
     createOrUpdateOverlay(el);
 
-    // Update constant icon badge
-    updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase');
+    // Only update badge if there are actual suggestions to show
+    const hasChanges = (result.correctedText ?? '').trim() !== text.trim();
+    if (hasChanges) {
+      updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase');
+    }
 
   } catch (err) {
     hideSpinner(el);

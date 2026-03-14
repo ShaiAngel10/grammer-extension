@@ -412,6 +412,10 @@ function showTooltip(targetEl, result, originalText) {
   const applyFix = () => {
     const textBefore = getTextFromElement(targetEl);
     setTextInElement(targetEl, correctedText);
+    // setTextInElement fires a synthetic 'input' event which schedules a new
+    // grammar check — cancel it so the tooltip doesn't flash after applying.
+    clearTimeout(debounceTimers.get(targetEl));
+    debounceTimers.delete(targetEl);
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
 

@@ -607,47 +607,9 @@ function showTooltip(targetEl, result, originalText) {
     refreshOverlayContent(targetEl);
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
+    // Close tooltip immediately — undo is available via the bottom bar
+    removeTooltip();
     showUndoBar(targetEl, textBefore);
-
-    if (btnShowUndo) {
-      const UNDO_DURATION = 5000;
-      tooltipInUndoMode = true;
-      actions.innerHTML = '';
-
-      const appliedMsg = document.createElement('span');
-      appliedMsg.className   = 'grammarai-applied-msg';
-      appliedMsg.textContent = '✓ Fix applied';
-
-      const countdown = document.createElement('span');
-      countdown.className   = 'grammarai-countdown';
-      countdown.textContent = `${UNDO_DURATION / 1000}s`;
-
-      const undoBtn = document.createElement('button');
-      undoBtn.className   = 'grammarai-undo-inline-btn';
-      undoBtn.textContent = shortcutUndo ? `Undo (${shortcutUndo})` : 'Undo';
-
-      actions.appendChild(appliedMsg);
-      actions.appendChild(countdown);
-      actions.appendChild(undoBtn);
-
-      undoCallback = () => {
-        clearInterval(countdownInterval);
-        setTextInElement(targetEl, textBefore);
-        removeTooltip();
-      };
-
-      let remaining = UNDO_DURATION / 1000;
-      const countdownInterval = setInterval(() => {
-        remaining -= 1;
-        countdown.textContent = `${remaining}s`;
-        if (remaining <= 0) clearInterval(countdownInterval);
-      }, 1000);
-
-      undoBtn.addEventListener('click', (e) => { e.stopPropagation(); undoCallback(); });
-      setTimeout(() => { clearInterval(countdownInterval); removeTooltip(); }, UNDO_DURATION);
-    } else {
-      removeTooltip();
-    }
   };
 
   header.querySelector('.grammarai-close').addEventListener('click', removeTooltip);

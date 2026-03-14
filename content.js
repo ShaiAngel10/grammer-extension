@@ -1,24 +1,17 @@
 /**
- * content.js — Content Script (v2)
+ * content.js — Content Script (v3)
  *
  * Features:
- *  - Debounce per element (WeakMap timers)
- *  - Per-request ID for stale-response cancellation
- *  - IN_FLIGHT retry (500ms backoff)
- *  - Spinner overlay on active field
- *  - Suggestion tooltip with:
- *      • Flesch-Kincaid readability score
- *      • Expandable corrections (click to reveal reason)
- *      • Per-correction "Ignore" button
- *      • Keyboard shortcuts (Escape = dismiss, Enter = apply)
- *  - Undo bar after applying a fix
- *  - Error tooltip (with clickable link for NO_API_KEY)
- *  - Per-site disable support
- *  - Tone rewriting mode
- *  - Native spellcheck as offline fallback
+ *  - Constant floating icon on every focused editable field
+ *  - Hover mini-menu: view suggestions, turn off for site, settings
+ *  - Live word-underline overlay (mirror div) for textarea/input
+ *  - Debounce + per-request ID for stale-response cancellation
+ *  - IN_FLIGHT retry, spinner, undo bar
+ *  - Suggestion tooltip with corrections, keyboard shortcuts, undo
  */
 
-// Firefox / Chrome compatibility shim
+'use strict';
+
 const ext = typeof browser !== 'undefined' ? browser : chrome;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -27,55 +20,53 @@ const DEBOUNCE_MS       = 850;
 const MIN_TEXT_LENGTH   = 15;
 const TOOLTIP_ID        = 'grammarai-tooltip';
 const UNDO_BAR_ID       = 'grammarai-undo-bar';
-const FLOAT_ID          = 'grammarai-float-icon';
 const ACTIVE_FIELD_ATTR = 'data-grammarai-active';
 const EDITABLE_SELECTOR = 'textarea, input[type="text"], input[type="search"], [contenteditable]';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let isEnabled      = true;
-let selectedLang   = 'en';
-let selectedMode   = 'grammar';   // 'grammar' | 'tone'
-let selectedTone   = 'formal';
-let isSiteDisabled = false;
-let ignoredPhrases = new Set();
+let isEnabled       = true;
+let selectedLang    = 'en';
+let selectedMode    = 'grammar';
+let selectedTone    = 'formal';
+let isSiteDisabled  = false;
+let currentHostname = window.location.hostname;
+let ignoredPhrases  = new Set();
 
-// Button visibility preferences (loaded from storage)
 let btnShowApply   = true;
 let btnShowDismiss = true;
 let btnShowUndo    = true;
 
-// Keyboard shortcut strings (e.g. 'Enter', 'Tab', 'Shift+Z', 'Ctrl+Enter')
 let shortcutApply   = 'Enter';
 let shortcutDismiss = 'Escape';
 let shortcutUndo    = '';
 
-// Whether the tooltip is currently showing the post-fix undo state
 let tooltipInUndoMode = false;
 let undoCallback      = null;
 
 // Per-element WeakMaps
-const debounceTimers = new WeakMap(); // el → setTimeout handle
-const requestIds     = new WeakMap(); // el → latest requestId string
-const retryTimers    = new WeakMap(); // el → retry setTimeout handle
-const spinners       = new WeakMap(); // el → spinner div
+const debounceTimers  = new WeakMap();
+const requestIds      = new WeakMap();
+const retryTimers     = new WeakMap();
+const spinners        = new WeakMap();
+const lastCorrections = new WeakMap(); // el → corrections[] from last API call
+const lastResults     = new WeakMap(); // el → full result object
+const lastTexts       = new WeakMap(); // el → original text that was checked
+const constantIcons   = new WeakMap(); // el → icon DOM element
+const overlays        = new WeakMap(); // el → mirror overlay DOM element
 
 // Tooltip cleanup state
-let currentTooltipTarget  = null;
-let outsideClickHandler   = null;
-let keyboardHandler       = null;
-let undoBarTimer          = null;
-
-// Floating icon state
-let floatScrollHandler    = null;
+let currentTooltipTarget = null;
+let outsideClickHandler  = null;
+let keyboardHandler      = null;
+let undoBarTimer         = null;
 
 // ─── Readability ──────────────────────────────────────────────────────────────
 
 function countSyllables(word) {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 1;
-  const stripped = w.replace(/e$/, '');
-  const groups = stripped.match(/[aeiou]+/g);
+  const groups = w.replace(/e$/, '').match(/[aeiou]+/g);
   return Math.max(1, groups ? groups.length : 1);
 }
 
@@ -83,14 +74,10 @@ function fleschKincaid(text) {
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (!sentences.length || !words.length) return null;
-
   const syllables = words.reduce((sum, w) => sum + countSyllables(w), 0);
   const score = Math.round(Math.max(0, Math.min(100,
-    206.835
-    - 1.015 * (words.length / sentences.length)
-    - 84.6  * (syllables / words.length)
+    206.835 - 1.015 * (words.length / sentences.length) - 84.6 * (syllables / words.length)
   )));
-
   let label;
   if      (score >= 90) label = 'Very Easy';
   else if (score >= 80) label = 'Easy';
@@ -99,8 +86,7 @@ function fleschKincaid(text) {
   else if (score >= 50) label = 'Fairly Difficult';
   else if (score >= 30) label = 'Difficult';
   else                  label = 'Very Difficult';
-
-  return { score, label, words: words.length };
+  return { score, label };
 }
 
 // ─── Element helpers ──────────────────────────────────────────────────────────
@@ -139,17 +125,12 @@ function escapeHTML(str) {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Returns true if a KeyboardEvent matches a stored shortcut string.
- * Format: optional modifiers joined with '+', then the key.
- * Examples: 'Enter', 'Tab', 'Shift+Z', 'Ctrl+Enter', 'Alt+Shift+X'
- */
 function matchesShortcut(e, shortcut) {
   if (!shortcut) return false;
   const parts = shortcut.split('+');
   const key   = parts[parts.length - 1];
   return (
-    e.key      === key                  &&
+    e.key      === key                     &&
     e.shiftKey === parts.includes('Shift') &&
     e.ctrlKey  === parts.includes('Ctrl')  &&
     e.altKey   === parts.includes('Alt')
@@ -174,21 +155,16 @@ function hideSpinner(el) {
   spinners.delete(el);
 }
 
-// ─── Positioning ──────────────────────────────────────────────────────────────
+// ─── Tooltip positioning ──────────────────────────────────────────────────────
 
 function positionTooltip(tooltip, targetEl) {
-  const rect    = targetEl.getBoundingClientRect();
-  const scrollY = window.scrollY;
-  const scrollX = window.scrollX;
-  const margin  = 8;
-
-  let top  = rect.bottom + scrollY + margin;
-  let left = rect.left   + scrollX;
-
+  const rect   = targetEl.getBoundingClientRect();
+  const margin = 8;
+  let top  = rect.bottom + window.scrollY + margin;
+  let left = rect.left   + window.scrollX;
   const tipWidth = tooltip.offsetWidth || 340;
-  if (left + tipWidth > window.innerWidth + scrollX - margin) {
-    left = window.innerWidth + scrollX - tipWidth - margin;
-  }
+  if (left + tipWidth > window.innerWidth + window.scrollX - margin)
+    left = window.innerWidth + window.scrollX - tipWidth - margin;
   tooltip.style.top  = `${top}px`;
   tooltip.style.left = `${left}px`;
 }
@@ -203,10 +179,8 @@ function repositionCurrentTooltip() {
 function removeTooltip() {
   document.getElementById(TOOLTIP_ID)?.remove();
   currentTooltipTarget = null;
-
   tooltipInUndoMode = false;
   undoCallback      = null;
-
   if (outsideClickHandler) {
     document.removeEventListener('mousedown', outsideClickHandler);
     outsideClickHandler = null;
@@ -224,99 +198,218 @@ function removeTooltip() {
 function showUndoBar(targetEl, originalText) {
   document.getElementById(UNDO_BAR_ID)?.remove();
   clearTimeout(undoBarTimer);
-
   const bar = document.createElement('div');
   bar.id = UNDO_BAR_ID;
   bar.innerHTML = `<span>Fix applied</span><button>Undo</button>`;
   document.body.appendChild(bar);
-
   bar.querySelector('button').addEventListener('click', () => {
     setTextInElement(targetEl, originalText);
     bar.remove();
     clearTimeout(undoBarTimer);
   });
-
   undoBarTimer = setTimeout(() => bar.remove(), 5000);
 }
 
-// ─── Floating icon ────────────────────────────────────────────────────────────
+// ─── Mirror overlay (live word underlines) ────────────────────────────────────
 
-function removeFloatingIcon() {
-  document.getElementById(FLOAT_ID)?.remove();
-  if (floatScrollHandler) {
-    window.removeEventListener('scroll', floatScrollHandler, true);
-    window.removeEventListener('resize', floatScrollHandler);
-    floatScrollHandler = null;
+function buildHighlightedHTML(text, corrections) {
+  if (!corrections || !corrections.length) return escapeHTML(text);
+
+  const ranges = [];
+  for (const c of corrections) {
+    if (!c.original?.trim()) continue;
+    let start = 0;
+    while (start < text.length) {
+      const idx = text.indexOf(c.original, start);
+      if (idx === -1) break;
+      ranges.push({ start: idx, end: idx + c.original.length });
+      start = idx + c.original.length;
+    }
   }
+  ranges.sort((a, b) => a.start - b.start);
+
+  const merged = [];
+  for (const r of ranges) {
+    if (merged.length && r.start < merged[merged.length - 1].end) continue;
+    merged.push(r);
+  }
+
+  let html = '';
+  let pos  = 0;
+  for (const { start, end } of merged) {
+    html += escapeHTML(text.slice(pos, start));
+    html += `<mark class="grammarai-mark">${escapeHTML(text.slice(start, end))}</mark>`;
+    pos = end;
+  }
+  html += escapeHTML(text.slice(pos));
+  return html;
 }
 
-function showFloatingIcon(targetEl, result, originalText) {
-  removeFloatingIcon();
+function syncOverlayStyles(overlay, el) {
+  const s    = window.getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  overlay.style.top    = `${rect.top  + window.scrollY}px`;
+  overlay.style.left   = `${rect.left + window.scrollX}px`;
+  overlay.style.width  = `${el.offsetWidth}px`;
+  overlay.style.height = `${el.offsetHeight}px`;
+  overlay.style.fontFamily      = s.fontFamily;
+  overlay.style.fontSize        = s.fontSize;
+  overlay.style.fontWeight      = s.fontWeight;
+  overlay.style.fontStyle       = s.fontStyle;
+  overlay.style.lineHeight      = s.lineHeight;
+  overlay.style.letterSpacing   = s.letterSpacing;
+  overlay.style.wordSpacing     = s.wordSpacing;
+  overlay.style.paddingTop      = s.paddingTop;
+  overlay.style.paddingRight    = s.paddingRight;
+  overlay.style.paddingBottom   = s.paddingBottom;
+  overlay.style.paddingLeft     = s.paddingLeft;
+  overlay.style.borderTopWidth    = s.borderTopWidth;
+  overlay.style.borderRightWidth  = s.borderRightWidth;
+  overlay.style.borderBottomWidth = s.borderBottomWidth;
+  overlay.style.borderLeftWidth   = s.borderLeftWidth;
+  overlay.style.textIndent   = s.textIndent;
+  overlay.style.whiteSpace   = el.tagName === 'TEXTAREA' ? 'pre-wrap' : 'pre';
+  overlay.style.wordWrap     = 'break-word';
+  overlay.style.overflowWrap = 'break-word';
+}
 
-  const { type = 'fix', corrections = [] } = result;
-  const validCorr = corrections.filter(c => c.original?.trim() && c.corrected?.trim());
-  const count     = validCorr.length;
-  const isRephrase = type === 'rephrase';
+function createOrUpdateOverlay(el) {
+  if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return;
+  let overlay = overlays.get(el);
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'grammarai-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(overlay);
+    overlays.set(el, overlay);
+    el.addEventListener('scroll', () => { overlay.scrollTop = el.scrollTop; });
+  }
+  syncOverlayStyles(overlay, el);
+  overlay.innerHTML = buildHighlightedHTML(getTextFromElement(el), lastCorrections.get(el) ?? []);
+  overlay.scrollTop = el.scrollTop;
+}
+
+function refreshOverlayContent(el) {
+  const overlay = overlays.get(el);
+  if (!overlay) return;
+  overlay.innerHTML = buildHighlightedHTML(getTextFromElement(el), lastCorrections.get(el) ?? []);
+  overlay.scrollTop = el.scrollTop;
+}
+
+function removeOverlay(el) {
+  overlays.get(el)?.remove();
+  overlays.delete(el);
+}
+
+// ─── Constant floating icon ───────────────────────────────────────────────────
+
+function positionConstantIcon(icon, el) {
+  const r = el.getBoundingClientRect();
+  icon.style.top  = `${r.bottom + window.scrollY - 14}px`;
+  icon.style.left = `${r.right  + window.scrollX - 14}px`;
+}
+
+function showConstantIcon(el) {
+  if (constantIcons.has(el)) return;
+  if (!isEnabled || isSiteDisabled) return;
 
   const icon = document.createElement('div');
-  icon.id = FLOAT_ID;
-
-  const badge = count > 0
-    ? `<span class="grammarai-float-badge">${count}</span>`
-    : '';
-
-  const viewLabel = isRephrase
-    ? '✏ View rephrase suggestion'
-    : `✦ View ${count} fix${count !== 1 ? 'es' : ''}`;
-
+  icon.className = 'grammarai-float-icon';
   icon.innerHTML = `
     <div class="grammarai-float-menu">
-      <button class="grammarai-float-view">${viewLabel}</button>
-      <button class="grammarai-float-dismiss">✕ Dismiss</button>
+      <button class="grammarai-float-view" style="display:none">✦ Checking…</button>
+      <div class="grammarai-float-divider"></div>
+      <button class="grammarai-float-siteoff">🚫 Turn off for this site</button>
+      <button class="grammarai-float-settings">⚙ Settings</button>
     </div>
-    <div class="grammarai-float-btn">
+    <div class="grammarai-float-btn" title="GrammarAI">
       <span class="grammarai-float-symbol">✦</span>
-      ${badge}
     </div>
   `;
 
-  const positionIcon = () => {
-    const r = targetEl.getBoundingClientRect();
-    icon.style.top  = `${r.bottom + window.scrollY - 14}px`;
-    icon.style.left = `${r.right  + window.scrollX - 14}px`;
-  };
-
+  positionConstantIcon(icon, el);
   document.body.appendChild(icon);
-  positionIcon();
-
-  floatScrollHandler = positionIcon;
-  window.addEventListener('scroll', floatScrollHandler, true);
-  window.addEventListener('resize', floatScrollHandler);
+  constantIcons.set(el, icon);
 
   const btn  = icon.querySelector('.grammarai-float-btn');
   const menu = icon.querySelector('.grammarai-float-menu');
 
-  // Show mini-menu on hover
   icon.addEventListener('mouseenter', () => menu.classList.add('grammarai-float-menu--open'));
   icon.addEventListener('mouseleave', () => menu.classList.remove('grammarai-float-menu--open'));
 
-  // Click the icon button → open full tooltip
-  btn.addEventListener('click', (e) => {
+  const openTooltip = (e) => {
+    e?.stopPropagation();
+    const result   = lastResults.get(el);
+    const origText = lastTexts.get(el);
+    if (result && origText) {
+      removeConstantIcon(el);
+      showTooltip(el, result, origText);
+    }
+  };
+
+  btn.addEventListener('click', openTooltip);
+  icon.querySelector('.grammarai-float-view').addEventListener('click', openTooltip);
+
+  icon.querySelector('.grammarai-float-siteoff').addEventListener('click', (e) => {
     e.stopPropagation();
-    removeFloatingIcon();
-    showTooltip(targetEl, result, originalText);
+    ext.storage.sync.get(['disabledSites'], ({ disabledSites = [] }) => {
+      const disabled = disabledSites.includes(currentHostname);
+      const updated  = disabled
+        ? disabledSites.filter(h => h !== currentHostname)
+        : [...disabledSites, currentHostname];
+      ext.storage.sync.set({ disabledSites: updated });
+      isSiteDisabled = !disabled;
+      const siteBtn = icon.querySelector('.grammarai-float-siteoff');
+      if (siteBtn) siteBtn.textContent = isSiteDisabled ? '✅ Turn on for this site' : '🚫 Turn off for this site';
+      if (isSiteDisabled) { removeTooltip(); removeConstantIcon(el); removeOverlay(el); }
+    });
   });
 
-  icon.querySelector('.grammarai-float-view').addEventListener('click', (e) => {
+  icon.querySelector('.grammarai-float-settings').addEventListener('click', (e) => {
     e.stopPropagation();
-    removeFloatingIcon();
-    showTooltip(targetEl, result, originalText);
+    ext.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
   });
 
-  icon.querySelector('.grammarai-float-dismiss').addEventListener('click', (e) => {
-    e.stopPropagation();
-    removeFloatingIcon();
-  });
+  const reposition = () => positionConstantIcon(icon, el);
+  icon._reposition = reposition;
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+}
+
+function updateConstantIconBadge(el, count, isRephrase) {
+  const icon = constantIcons.get(el);
+  if (!icon) return;
+
+  const btn     = icon.querySelector('.grammarai-float-btn');
+  const viewBtn = icon.querySelector('.grammarai-float-view');
+
+  btn.querySelector('.grammarai-float-badge')?.remove();
+
+  if (count > 0 || isRephrase) {
+    const badge = document.createElement('span');
+    badge.className   = 'grammarai-float-badge';
+    badge.textContent = isRephrase ? '✏' : String(count);
+    if (isRephrase) badge.style.background = '#7c3aed';
+    btn.appendChild(badge);
+  }
+
+  if (viewBtn) {
+    viewBtn.style.display = '';
+    viewBtn.textContent   = isRephrase
+      ? '✏ View rephrase suggestion'
+      : `✦ View ${count} fix${count !== 1 ? 'es' : ''}`;
+  }
+}
+
+function removeConstantIcon(el) {
+  const icon = constantIcons.get(el);
+  if (!icon) return;
+  if (icon._reposition) {
+    window.removeEventListener('scroll', icon._reposition, true);
+    window.removeEventListener('resize', icon._reposition);
+  }
+  icon.remove();
+  constantIcons.delete(el);
 }
 
 // ─── Error tooltip ────────────────────────────────────────────────────────────
@@ -324,14 +417,11 @@ function showFloatingIcon(targetEl, result, originalText) {
 function showErrorTooltip(targetEl, errorMsg) {
   removeTooltip();
   currentTooltipTarget = targetEl;
-
-  const isNoKey    = errorMsg === 'NO_API_KEY';
+  const isNoKey     = errorMsg === 'NO_API_KEY';
   const isRateLimit = errorMsg?.startsWith('RATE_LIMIT:');
   const displayMsg  = isNoKey
     ? 'No API key set. Click here to open settings.'
-    : isRateLimit
-      ? errorMsg.replace('RATE_LIMIT:', '').trim()
-      : errorMsg;
+    : isRateLimit ? errorMsg.replace('RATE_LIMIT:', '').trim() : errorMsg;
 
   const tooltip = document.createElement('div');
   tooltip.id = TOOLTIP_ID;
@@ -359,7 +449,6 @@ function showErrorTooltip(targetEl, errorMsg) {
 
   window.addEventListener('scroll', repositionCurrentTooltip, true);
   window.addEventListener('resize', repositionCurrentTooltip);
-
   header.querySelector('.grammarai-close').addEventListener('click', removeTooltip);
   outsideClickHandler = (e) => {
     if (!tooltip.contains(e.target) && e.target !== targetEl) removeTooltip();
@@ -376,15 +465,12 @@ function showTooltip(targetEl, result, originalText) {
   const { type = 'fix', correctedText, explanation, corrections = [] } = result;
   const isRephrase = type === 'rephrase';
 
-  // Nothing changed
   if (correctedText.trim() === originalText.trim()) return;
 
-  // Filter out empty/malformed corrections and ignored phrases
   const validCorrections = corrections.filter(
     c => c.original && c.corrected && c.original.trim() !== '' && c.corrected.trim() !== ''
   );
   const visible = validCorrections.filter(c => !ignoredPhrases.has((c.original ?? '').toLowerCase()));
-  // If every correction was ignored, skip showing tooltip
   if (!isRephrase && validCorrections.length > 0 && visible.length === 0) return;
 
   currentTooltipTarget = targetEl;
@@ -395,7 +481,7 @@ function showTooltip(targetEl, result, originalText) {
   tooltip.setAttribute('aria-label', 'GrammarAI Suggestion');
   tooltip.setAttribute('tabindex', '-1');
 
-  // ── Header ─────────────────────────────────────────────────────────────────
+  // Header
   const readability = fleschKincaid(correctedText);
   const header = document.createElement('div');
   header.className = 'grammarai-header';
@@ -403,22 +489,21 @@ function showTooltip(targetEl, result, originalText) {
     <span class="grammarai-logo">✦ GrammarAI</span>
     ${isRephrase
       ? `<span class="grammarai-score grammarai-rephrase-badge">✏ Rephrase</span>`
-      : readability ? `<span class="grammarai-score" title="Flesch-Kincaid Readability">${readability.label} <strong>${readability.score}</strong>/100</span>` : ''
+      : readability ? `<span class="grammarai-score" title="Flesch-Kincaid">${readability.label} <strong>${readability.score}</strong>/100</span>` : ''
     }
     <button class="grammarai-close" aria-label="Dismiss">✕</button>
   `;
 
-  // ── Explanation ────────────────────────────────────────────────────────────
+  // Explanation
   const exp = document.createElement('p');
   exp.className = 'grammarai-explanation';
   exp.textContent = explanation;
 
-  // ── Corrections list ───────────────────────────────────────────────────────
+  // Corrections list
   let corrList = null;
   if (!isRephrase && visible.length) {
     corrList = document.createElement('ul');
     corrList.className = 'grammarai-corrections';
-
     visible.slice(0, 4).forEach(({ original: orig = '', corrected: corr = '', reason = '' }) => {
       const li = document.createElement('li');
       li.className = 'grammarai-correction-item';
@@ -429,9 +514,9 @@ function showTooltip(targetEl, result, originalText) {
       main.innerHTML = `<del>${escapeHTML(orig)}</del> → <ins>${escapeHTML(corr)}</ins>`;
 
       const ignoreBtn = document.createElement('button');
-      ignoreBtn.className = 'grammarai-ignore-btn';
+      ignoreBtn.className   = 'grammarai-ignore-btn';
       ignoreBtn.textContent = '✕';
-      ignoreBtn.title = 'Ignore this suggestion';
+      ignoreBtn.title       = 'Ignore this suggestion';
       ignoreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const phrase = orig.toLowerCase();
@@ -444,7 +529,7 @@ function showTooltip(targetEl, result, originalText) {
       });
 
       const reasonSpan = document.createElement('span');
-      reasonSpan.className = 'grammarai-reason';
+      reasonSpan.className   = 'grammarai-reason';
       reasonSpan.textContent = reason;
 
       main.appendChild(ignoreBtn);
@@ -455,18 +540,18 @@ function showTooltip(targetEl, result, originalText) {
     });
 
     const hint = document.createElement('p');
-    hint.className = 'grammarai-corrections-hint';
+    hint.className   = 'grammarai-corrections-hint';
     hint.textContent = 'Click a correction to see why';
     corrList.appendChild(hint);
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // Actions
   const actions = document.createElement('div');
   actions.className = 'grammarai-actions';
 
   if (btnShowApply) {
     const fixBtn = document.createElement('button');
-    fixBtn.className = 'grammarai-fix-btn';
+    fixBtn.className   = 'grammarai-fix-btn';
     fixBtn.textContent = isRephrase ? '✏ Apply Rephrase' : '✓ Apply Fix';
     fixBtn.addEventListener('click', (e) => { e.stopPropagation(); applyFix(); });
     actions.appendChild(fixBtn);
@@ -474,13 +559,12 @@ function showTooltip(targetEl, result, originalText) {
 
   if (btnShowDismiss) {
     const dismissBtn = document.createElement('button');
-    dismissBtn.className = 'grammarai-dismiss-btn';
+    dismissBtn.className   = 'grammarai-dismiss-btn';
     dismissBtn.textContent = 'Dismiss';
     dismissBtn.addEventListener('click', removeTooltip);
     actions.appendChild(dismissBtn);
   }
 
-  // ── Assemble ───────────────────────────────────────────────────────────────
   tooltip.appendChild(header);
   tooltip.appendChild(exp);
   if (corrList) tooltip.appendChild(corrList);
@@ -492,18 +576,16 @@ function showTooltip(targetEl, result, originalText) {
   window.addEventListener('scroll', repositionCurrentTooltip, true);
   window.addEventListener('resize', repositionCurrentTooltip);
 
-  // ── Apply fix: swap actions row to undo state ──────────────────────────────
+  // Apply fix
   const applyFix = () => {
     const textBefore = getTextFromElement(targetEl);
     setTextInElement(targetEl, correctedText);
-    // setTextInElement fires a synthetic 'input' event which schedules a new
-    // grammar check — cancel it so the tooltip doesn't flash after applying.
     clearTimeout(debounceTimers.get(targetEl));
     debounceTimers.delete(targetEl);
+    lastCorrections.delete(targetEl);
+    refreshOverlayContent(targetEl);
     targetEl.style.outline = '2px solid #22c55e';
     setTimeout(() => (targetEl.style.outline = ''), 1200);
-
-    // Always show the floating undo bar — easy to find regardless of tooltip state
     showUndoBar(targetEl, textBefore);
 
     if (btnShowUndo) {
@@ -512,22 +594,21 @@ function showTooltip(targetEl, result, originalText) {
       actions.innerHTML = '';
 
       const appliedMsg = document.createElement('span');
-      appliedMsg.className = 'grammarai-applied-msg';
+      appliedMsg.className   = 'grammarai-applied-msg';
       appliedMsg.textContent = '✓ Fix applied';
 
       const countdown = document.createElement('span');
-      countdown.className = 'grammarai-countdown';
+      countdown.className   = 'grammarai-countdown';
       countdown.textContent = `${UNDO_DURATION / 1000}s`;
 
       const undoBtn = document.createElement('button');
-      undoBtn.className = 'grammarai-undo-inline-btn';
+      undoBtn.className   = 'grammarai-undo-inline-btn';
       undoBtn.textContent = shortcutUndo ? `Undo (${shortcutUndo})` : 'Undo';
 
       actions.appendChild(appliedMsg);
       actions.appendChild(countdown);
       actions.appendChild(undoBtn);
 
-      // Expose undo action for keyboard shortcut
       undoCallback = () => {
         clearInterval(countdownInterval);
         setTextInElement(targetEl, textBefore);
@@ -542,11 +623,7 @@ function showTooltip(targetEl, result, originalText) {
       }, 1000);
 
       undoBtn.addEventListener('click', (e) => { e.stopPropagation(); undoCallback(); });
-
-      setTimeout(() => {
-        clearInterval(countdownInterval);
-        removeTooltip();
-      }, UNDO_DURATION);
+      setTimeout(() => { clearInterval(countdownInterval); removeTooltip(); }, UNDO_DURATION);
     } else {
       removeTooltip();
     }
@@ -554,35 +631,21 @@ function showTooltip(targetEl, result, originalText) {
 
   header.querySelector('.grammarai-close').addEventListener('click', removeTooltip);
 
-  // Keyboard shortcuts — configurable, fall back to defaults
   keyboardHandler = (e) => {
     if (tooltipInUndoMode) {
-      // In undo state: only undo shortcut and dismiss are active
-      if (matchesShortcut(e, shortcutUndo) && undoCallback) {
-        e.preventDefault();
-        undoCallback();
-      } else if (matchesShortcut(e, shortcutDismiss)) {
-        e.preventDefault();
-        removeTooltip();
-      }
+      if (matchesShortcut(e, shortcutUndo) && undoCallback) { e.preventDefault(); undoCallback(); }
+      else if (matchesShortcut(e, shortcutDismiss))         { e.preventDefault(); removeTooltip(); }
     } else {
-      if (matchesShortcut(e, shortcutApply)) {
-        e.preventDefault();
-        applyFix();
-      } else if (matchesShortcut(e, shortcutDismiss)) {
-        e.preventDefault();
-        removeTooltip();
-      }
+      if (matchesShortcut(e, shortcutApply))        { e.preventDefault(); applyFix(); }
+      else if (matchesShortcut(e, shortcutDismiss)) { e.preventDefault(); removeTooltip(); }
     }
   };
   document.addEventListener('keydown', keyboardHandler, true);
 
-  // Auto-focus tooltip for keyboard nav, but don't steal from the input
   setTimeout(() => { if (document.activeElement !== targetEl) tooltip.focus(); }, 0);
 
-  // Outside click
   outsideClickHandler = (e) => {
-    if (!document.contains(e.target)) return; // target removed from DOM (e.g. after Apply Fix)
+    if (!document.contains(e.target)) return;
     if (!tooltip.contains(e.target) && e.target !== targetEl) removeTooltip();
   };
   setTimeout(() => document.addEventListener('mousedown', outsideClickHandler), 50);
@@ -595,7 +658,6 @@ async function requestGrammarCheck(el) {
   if (!text || text.length < MIN_TEXT_LENGTH) return;
   if (!isEnabled || isSiteDisabled) return;
 
-  // Assign unique ID for stale-response cancellation
   const requestId = crypto.randomUUID();
   requestIds.set(el, requestId);
 
@@ -606,17 +668,14 @@ async function requestGrammarCheck(el) {
       type: 'CHECK_GRAMMAR',
       text,
       language: selectedLang,
-      mode: selectedMode,
-      tone: selectedTone,
+      mode:     selectedMode,
+      tone:     selectedTone,
       requestId,
     });
 
-    // Discard if user has typed again (newer request is pending/in-flight)
     if (requestIds.get(el) !== requestId) return;
-
     hideSpinner(el);
 
-    // Background was busy — retry after a short delay
     if (!response.success && response.error === 'IN_FLIGHT') {
       clearTimeout(retryTimers.get(el));
       retryTimers.set(el, setTimeout(() => requestGrammarCheck(el), 500));
@@ -628,7 +687,20 @@ async function requestGrammarCheck(el) {
       return;
     }
 
-    showFloatingIcon(el, response.data, text);
+    const result   = response.data;
+    const validCorr = (result.corrections ?? []).filter(
+      c => c.original?.trim() && c.corrected?.trim()
+    );
+
+    lastResults.set(el, result);
+    lastTexts.set(el, text);
+    lastCorrections.set(el, validCorr);
+
+    // Update live underline overlay
+    createOrUpdateOverlay(el);
+
+    // Update constant icon badge
+    updateConstantIconBadge(el, validCorr.length, result.type === 'rephrase');
 
   } catch (err) {
     hideSpinner(el);
@@ -640,11 +712,8 @@ async function requestGrammarCheck(el) {
 // ─── Element attachment ───────────────────────────────────────────────────────
 
 function isEffectivelyEditable(el) {
-  // Skip read-only and disabled inputs
   if (el.readOnly || el.disabled) return false;
-  // For contenteditable, skip elements where the attribute is explicitly "false"
   if (el.hasAttribute('contenteditable') && el.getAttribute('contenteditable') === 'false') return false;
-  // Skip elements that don't accept user input based on aria role
   const role = el.getAttribute('role');
   if (role && ['presentation', 'none', 'img', 'log', 'status'].includes(role)) return false;
   return true;
@@ -655,23 +724,33 @@ function attachToElement(el) {
   if (!isEffectivelyEditable(el)) return;
   el.setAttribute(ACTIVE_FIELD_ATTR, '1');
 
-  // Offline fallback: enable native browser spellcheck when no API key is set
   ext.storage.local.get(['apiKey'], ({ apiKey }) => {
-    if (!apiKey && !el.hasAttribute('spellcheck')) {
-      el.setAttribute('spellcheck', 'true');
-    }
+    if (!apiKey && !el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'true');
   });
 
-  el.addEventListener('input', () => {
-    removeTooltip();
-    removeFloatingIcon();
-    clearTimeout(debounceTimers.get(el));
-    debounceTimers.set(el, setTimeout(() => requestGrammarCheck(el), DEBOUNCE_MS));
+  el.addEventListener('focus', () => {
+    if (isEnabled && !isSiteDisabled) {
+      showConstantIcon(el);
+      createOrUpdateOverlay(el);
+    }
   });
 
   el.addEventListener('blur', () => {
     clearTimeout(debounceTimers.get(el));
-    // Don't remove tooltip on blur — user might be clicking the Fix button
+    // Short delay so clicking the icon menu doesn't instantly hide it
+    setTimeout(() => {
+      if (currentTooltipTarget !== el) {
+        removeConstantIcon(el);
+        removeOverlay(el);
+      }
+    }, 200);
+  });
+
+  el.addEventListener('input', () => {
+    removeTooltip();
+    clearTimeout(debounceTimers.get(el));
+    refreshOverlayContent(el); // live-update underlines as user types
+    debounceTimers.set(el, setTimeout(() => requestGrammarCheck(el), DEBOUNCE_MS));
   });
 }
 
@@ -687,7 +766,7 @@ const observer = new MutationObserver((mutations) => {
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
-      if (node.matches?.(EDITABLE_SELECTOR))           attachToElement(node);
+      if (node.matches?.(EDITABLE_SELECTOR))          attachToElement(node);
       node.querySelectorAll?.(EDITABLE_SELECTOR).forEach(attachToElement);
     }
   }
@@ -695,7 +774,7 @@ const observer = new MutationObserver((mutations) => {
 
 observer.observe(document.body, { childList: true, subtree: true });
 
-// ─── Settings messages from popup ────────────────────────────────────────────
+// ─── Settings messages from popup ─────────────────────────────────────────────
 
 ext.runtime.onMessage.addListener((message) => {
   if (message.type !== 'SETTINGS_UPDATED') return;
@@ -710,36 +789,37 @@ ext.runtime.onMessage.addListener((message) => {
   if (message.shortcutApply   !== undefined) shortcutApply   = message.shortcutApply;
   if (message.shortcutDismiss !== undefined) shortcutDismiss = message.shortcutDismiss;
   if (message.shortcutUndo    !== undefined) shortcutUndo    = message.shortcutUndo;
-  if (!isEnabled || isSiteDisabled) { removeTooltip(); removeFloatingIcon(); }
+  if (!isEnabled || isSiteDisabled) {
+    removeTooltip();
+    document.querySelectorAll('.grammarai-float-icon').forEach(i => i.remove());
+    document.querySelectorAll('.grammarai-overlay').forEach(i => i.remove());
+  }
 });
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 (async () => {
-  const hostname = window.location.hostname;
-
   const [syncData, localData] = await Promise.all([
     new Promise(r => ext.storage.sync.get(
       ['grammarEnabled', 'grammarLanguage', 'grammarMode', 'grammarTone', 'disabledSites',
        'btnShowApply', 'btnShowDismiss', 'btnShowUndo',
-       'shortcutApply', 'shortcutDismiss', 'shortcutUndo'],
-      r
+       'shortcutApply', 'shortcutDismiss', 'shortcutUndo'], r
     )),
     new Promise(r => ext.storage.local.get(['ignoredPhrases'], r)),
   ]);
 
-  isEnabled      = syncData.grammarEnabled  ?? true;
-  selectedLang   = syncData.grammarLanguage ?? 'en';
-  selectedMode   = syncData.grammarMode     ?? 'grammar';
-  selectedTone   = syncData.grammarTone     ?? 'formal';
-  isSiteDisabled = (syncData.disabledSites  ?? []).includes(hostname);
-  ignoredPhrases = new Set(localData.ignoredPhrases ?? []);
-  btnShowApply   = syncData.btnShowApply    ?? true;
-  btnShowDismiss = syncData.btnShowDismiss  ?? true;
-  btnShowUndo    = syncData.btnShowUndo     ?? true;
-  shortcutApply  = syncData.shortcutApply   ?? 'Enter';
-  shortcutDismiss= syncData.shortcutDismiss ?? 'Escape';
-  shortcutUndo   = syncData.shortcutUndo    ?? '';
+  isEnabled       = syncData.grammarEnabled  ?? true;
+  selectedLang    = syncData.grammarLanguage ?? 'en';
+  selectedMode    = syncData.grammarMode     ?? 'grammar';
+  selectedTone    = syncData.grammarTone     ?? 'formal';
+  isSiteDisabled  = (syncData.disabledSites  ?? []).includes(currentHostname);
+  ignoredPhrases  = new Set(localData.ignoredPhrases ?? []);
+  btnShowApply    = syncData.btnShowApply    ?? true;
+  btnShowDismiss  = syncData.btnShowDismiss  ?? true;
+  btnShowUndo     = syncData.btnShowUndo     ?? true;
+  shortcutApply   = syncData.shortcutApply   ?? 'Enter';
+  shortcutDismiss = syncData.shortcutDismiss ?? 'Escape';
+  shortcutUndo    = syncData.shortcutUndo    ?? '';
 
   scanAndAttach();
 })();

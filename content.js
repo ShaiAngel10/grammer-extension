@@ -289,15 +289,19 @@ function showErrorTooltip(targetEl, errorMsg) {
 function showTooltip(targetEl, result, originalText) {
   removeTooltip();
 
-  const { correctedText, explanation, corrections = [] } = result;
+  const { type = 'fix', correctedText, explanation, corrections = [] } = result;
+  const isRephrase = type === 'rephrase';
 
   // Nothing changed
   if (correctedText.trim() === originalText.trim()) return;
 
-  // Filter ignored phrases
-  const visible = corrections.filter(c => !ignoredPhrases.has((c.original ?? '').toLowerCase()));
+  // Filter out empty/malformed corrections and ignored phrases
+  const validCorrections = corrections.filter(
+    c => c.original && c.corrected && c.original.trim() !== '' && c.corrected.trim() !== ''
+  );
+  const visible = validCorrections.filter(c => !ignoredPhrases.has((c.original ?? '').toLowerCase()));
   // If every correction was ignored, skip showing tooltip
-  if (corrections.length > 0 && visible.length === 0) return;
+  if (!isRephrase && validCorrections.length > 0 && visible.length === 0) return;
 
   currentTooltipTarget = targetEl;
 
@@ -313,7 +317,10 @@ function showTooltip(targetEl, result, originalText) {
   header.className = 'grammarai-header';
   header.innerHTML = `
     <span class="grammarai-logo">✦ GrammarAI</span>
-    ${readability ? `<span class="grammarai-score" title="Flesch-Kincaid Readability">${readability.label} <strong>${readability.score}</strong>/100</span>` : ''}
+    ${isRephrase
+      ? `<span class="grammarai-score grammarai-rephrase-badge">✏ Rephrase</span>`
+      : readability ? `<span class="grammarai-score" title="Flesch-Kincaid Readability">${readability.label} <strong>${readability.score}</strong>/100</span>` : ''
+    }
     <button class="grammarai-close" aria-label="Dismiss">✕</button>
   `;
 
@@ -324,7 +331,7 @@ function showTooltip(targetEl, result, originalText) {
 
   // ── Corrections list ───────────────────────────────────────────────────────
   let corrList = null;
-  if (visible.length) {
+  if (!isRephrase && visible.length) {
     corrList = document.createElement('ul');
     corrList.className = 'grammarai-corrections';
 
@@ -376,7 +383,7 @@ function showTooltip(targetEl, result, originalText) {
   if (btnShowApply) {
     const fixBtn = document.createElement('button');
     fixBtn.className = 'grammarai-fix-btn';
-    fixBtn.textContent = '✓ Apply Fix';
+    fixBtn.textContent = isRephrase ? '✏ Apply Rephrase' : '✓ Apply Fix';
     fixBtn.addEventListener('click', (e) => { e.stopPropagation(); applyFix(); });
     actions.appendChild(fixBtn);
   }

@@ -53,17 +53,27 @@ const TONE_DESCRIPTIONS = {
 
 // ─── Prompt factories ─────────────────────────────────────────────────────────
 
+/**
+ * Smart unified grammar prompt.
+ * The AI decides whether to do a targeted fix or a full rephrase
+ * based on the quality of the input text.
+ */
 function buildGrammarPrompt(langCode, customPrompt = '') {
   const langName = LANGUAGE_NAMES[langCode] ?? langCode;
-  const base = `You are a professional ${langName} grammar and spell-checking assistant.
+  const base = `You are a professional ${langName} grammar and writing assistant.
 
-The user will send you a piece of text. Your job is to:
-1. Correct all spelling mistakes, grammar errors, punctuation issues, and awkward phrasing.
-2. Preserve the original meaning and tone as closely as possible.
-3. Return ONLY a raw JSON object with this exact shape (no markdown, no code fences):
+Analyse the text the user sends and decide which type of response is most helpful:
 
+TYPE "fix" — Use this when the text has specific isolated errors (spelling, punctuation, wrong word, minor grammar) but the overall sentence structure and clarity are acceptable. Only patch the exact errors; keep everything else identical.
+
+TYPE "rephrase" — Use this when the overall sentence quality is poor: the text is confusing, awkward, hard to follow, repetitive, or would benefit significantly from being rewritten rather than patched. Rewrite to maximise clarity, flow, and readability while preserving the original meaning.
+
+Return ONLY a raw JSON object (no markdown, no code fences).
+
+For TYPE "fix":
 {
-  "correctedText": "<the fully corrected text>",
+  "type": "fix",
+  "correctedText": "<the corrected text with only the errors patched>",
   "explanation": "<one concise sentence summarising what was changed and why>",
   "corrections": [
     {
@@ -74,7 +84,15 @@ The user will send you a piece of text. Your job is to:
   ]
 }
 
-If the text has NO errors, return the original text unchanged, set "explanation" to "No errors found." and "corrections" to [].
+For TYPE "rephrase":
+{
+  "type": "rephrase",
+  "correctedText": "<the fully rewritten text>",
+  "explanation": "<one sentence describing the main improvements made>",
+  "corrections": []
+}
+
+If the text has NO errors and reads well, return type "fix" with correctedText equal to the original, explanation "No errors found." and corrections [].
 Never include anything outside the JSON object.`;
 
   return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
@@ -89,30 +107,9 @@ The user will send you a piece of text. Rewrite it in a ${toneDesc} style while 
 Return ONLY a raw JSON object with this exact shape (no markdown, no code fences):
 
 {
+  "type": "rephrase",
   "correctedText": "<the rewritten text>",
   "explanation": "<one sentence describing how the tone was adjusted>",
-  "corrections": []
-}
-
-Never include anything outside the JSON object.`;
-
-  return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
-}
-
-function buildRephrasePrompt(langCode, customPrompt = '') {
-  const langName = LANGUAGE_NAMES[langCode] ?? langCode;
-  const base = `You are a professional ${langName} writing assistant specialising in sentence rewriting.
-
-The user will send you a piece of text. Your job is to:
-1. Completely rewrite the text to maximise clarity, flow, and readability.
-2. Fix all grammar and spelling errors in the process.
-3. Preserve the original meaning — do NOT add new information or change the intent.
-4. Feel free to restructure sentences, split long ones, merge short choppy ones, and choose stronger vocabulary.
-5. Return ONLY a raw JSON object with this exact shape (no markdown, no code fences):
-
-{
-  "correctedText": "<the fully rewritten text>",
-  "explanation": "<one sentence describing the main improvements made>",
   "corrections": []
 }
 
@@ -223,9 +220,7 @@ ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       try {
         const systemPrompt = mode === 'tone'
           ? buildTonePrompt(language, tone, customSystemPrompt)
-          : mode === 'rephrase'
-            ? buildRephrasePrompt(language, customSystemPrompt)
-            : buildGrammarPrompt(language, customSystemPrompt);
+          : buildGrammarPrompt(language, customSystemPrompt);
 
         const data = await callOpenAI(
           [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],

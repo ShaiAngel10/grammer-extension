@@ -128,7 +128,7 @@
 
     /* ── Segmented mode control ── */
     .mode-tabs {
-      display: grid; grid-template-columns: 1fr 1fr;
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -270,8 +270,9 @@
     <div class="field">
       <label>Mode</label>
       <div class="mode-tabs">
-        <button class="mode-tab active" data-mode="grammar">✦ Grammar Check</button>
-        <button class="mode-tab"        data-mode="tone">🎨 Tone Rewrite</button>
+        <button class="mode-tab active" data-mode="grammar">✦ Grammar</button>
+        <button class="mode-tab"        data-mode="rephrase">✏ Rephrase</button>
+        <button class="mode-tab"        data-mode="tone">🎨 Tone</button>
       </div>
     </div>
 

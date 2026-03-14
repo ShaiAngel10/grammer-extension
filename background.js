@@ -99,6 +99,28 @@ Never include anything outside the JSON object.`;
   return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
 }
 
+function buildRephrasePrompt(langCode, customPrompt = '') {
+  const langName = LANGUAGE_NAMES[langCode] ?? langCode;
+  const base = `You are a professional ${langName} writing assistant specialising in sentence rewriting.
+
+The user will send you a piece of text. Your job is to:
+1. Completely rewrite the text to maximise clarity, flow, and readability.
+2. Fix all grammar and spelling errors in the process.
+3. Preserve the original meaning — do NOT add new information or change the intent.
+4. Feel free to restructure sentences, split long ones, merge short choppy ones, and choose stronger vocabulary.
+5. Return ONLY a raw JSON object with this exact shape (no markdown, no code fences):
+
+{
+  "correctedText": "<the fully rewritten text>",
+  "explanation": "<one sentence describing the main improvements made>",
+  "corrections": []
+}
+
+Never include anything outside the JSON object.`;
+
+  return customPrompt ? `${base}\n\nAdditional instructions: ${customPrompt}` : base;
+}
+
 // ─── Storage helper ───────────────────────────────────────────────────────────
 
 function storageGet(store, keys) {
@@ -201,7 +223,9 @@ ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       try {
         const systemPrompt = mode === 'tone'
           ? buildTonePrompt(language, tone, customSystemPrompt)
-          : buildGrammarPrompt(language, customSystemPrompt);
+          : mode === 'rephrase'
+            ? buildRephrasePrompt(language, customSystemPrompt)
+            : buildGrammarPrompt(language, customSystemPrompt);
 
         const data = await callOpenAI(
           [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],

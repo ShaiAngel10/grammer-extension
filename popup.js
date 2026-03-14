@@ -87,6 +87,7 @@ function setMode(mode) {
   currentMode = mode;
   modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
   toneRow.style.display = mode === 'tone' ? 'flex' : 'none';
+  // Update popup width hint for the 3-tab layout — no action needed, CSS handles it
 }
 
 // ─── Load settings on open ───────────────────────────────────────────────────
